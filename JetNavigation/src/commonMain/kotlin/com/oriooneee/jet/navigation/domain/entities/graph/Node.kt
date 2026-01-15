@@ -13,7 +13,7 @@ data class Node(
     @SerialName("y")
     val y: Double,
     @SerialName("z")
-    val z: Double
-){
-
-}
+    val z: Double,
+    @SerialName("label")
+    val label: String? = null,
+)

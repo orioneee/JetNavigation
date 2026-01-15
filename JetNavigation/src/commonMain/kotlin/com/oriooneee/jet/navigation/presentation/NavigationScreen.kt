@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -64,12 +63,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -78,9 +77,16 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.oriooneee.jet.navigation.TextLabel
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 import com.oriooneee.jet.navigation.domain.entities.graph.Node
@@ -150,6 +156,15 @@ class ZoomState(private val minScale: Float, private val maxScale: Float) {
     }
 }
 
+fun parseColor(hex: String): Color {
+    val cleanHex = hex.removePrefix("#")
+    val color = cleanHex.toLongOrNull(16) ?: 0x000000
+    val r = ((color shr 16) and 0xFF) / 255f
+    val g = ((color shr 8) and 0xFF) / 255f
+    val b = (color and 0xFF) / 255f
+    return Color(r, g, b)
+}
+
 @OptIn(ExperimentalLayoutApi::class, ExperimentalAnimationApi::class)
 @Composable
 fun NavigationScreen(
@@ -180,13 +195,12 @@ fun NavigationScreen(
         }
     }
 
-    Scaffold(){
+    Scaffold {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-        )
-        {
+        ) {
             Card(
                 modifier = Modifier
                     .statusBarsPadding()
@@ -222,7 +236,8 @@ fun NavigationScreen(
                                     Box(modifier = Modifier.fillMaxSize()) {
                                         ZoomableSvgCanvas(
                                             svgBytes = step.image,
-                                            initFocusPoint = step.pointOfInterest
+                                            initFocusPoint = step.pointOfInterest,
+                                            textLabels = step.textLabels
                                         )
                                         FloorBadge(
                                             floorNumber = step.flor,
@@ -244,13 +259,29 @@ fun NavigationScreen(
                     } else {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(32.dp)
                         ) {
                             Icon(
                                 Icons.Default.LocationOn,
                                 contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                modifier = Modifier.size(80.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            )
+                            Spacer(Modifier.height(24.dp))
+                            Text(
+                                text = "Ready to Navigate",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "Select your start and destination points to view the route on the map",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
                     }
@@ -258,8 +289,7 @@ fun NavigationScreen(
             }
 
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 16.dp,
@@ -268,16 +298,18 @@ fun NavigationScreen(
                 Box(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
-                ){
+                ) {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 300.dp),
                         modifier = Modifier
                             .navigationBarsPadding()
                             .padding(24.dp)
-                            .widthIn(max = 800.dp)
-                        ,
+                            .widthIn(max = 800.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+                        horizontalArrangement = Arrangement.spacedBy(
+                            16.dp,
+                            Alignment.CenterHorizontally
+                        )
                     ) {
                         item {
                             DestinationInputPanel(
@@ -358,14 +390,14 @@ fun DestinationInputPanel(
             ) {
                 LocationInputRow(
                     label = "Start",
-                    value = startNode?.id?.replace("_", " ") ?: "Start",
+                    value = startNode?.label ?: "Start",
                     isEmpty = startNode == null,
                     onClick = onSelectStart
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 LocationInputRow(
                     label = "End",
-                    value = endNode?.id?.replace("_", " ") ?: "Destination",
+                    value = endNode?.label ?: "Destination",
                     isEmpty = endNode == null,
                     onClick = onSelectEnd
                 )
@@ -407,9 +439,7 @@ fun LocationInputRow(
     ListItem(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable {
-                onClick()
-            },
+            .clickable { onClick() },
         headlineContent = {
             if (!isEmpty) {
                 Text(
@@ -417,7 +447,7 @@ fun LocationInputRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
-            } else{
+            } else {
                 Text(
                     text = value,
                     style = MaterialTheme.typography.bodyLarge,
@@ -520,14 +550,21 @@ fun NavigationControls(
 }
 
 @Composable
-fun ZoomableSvgCanvas(svgBytes: ByteArray, initFocusPoint: Offset) {
+fun ZoomableSvgCanvas(
+    svgBytes: ByteArray,
+    initFocusPoint: Offset,
+    textLabels: List<TextLabel>
+) {
     val painter = rememberVectorSvgPainter(svgBytes)
     val zoomState = rememberZoomState()
+    val textMeasurer = rememberTextMeasurer()
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
-        val containerSize =
-            Size(with(density) { maxWidth.toPx() }, with(density) { maxHeight.toPx() })
+        val containerSize = Size(
+            with(density) { maxWidth.toPx() },
+            with(density) { maxHeight.toPx() }
+        )
 
         LaunchedEffect(painter.intrinsicSize, containerSize, initFocusPoint) {
             zoomState.updateContainerSize(containerSize)
@@ -552,6 +589,44 @@ fun ZoomableSvgCanvas(svgBytes: ByteArray, initFocusPoint: Offset) {
                 scale(scaleX = zoomState.scale, scaleY = zoomState.scale, pivot = Offset.Zero)
             }) {
                 with(painter) { draw(size = intrinsicSize) }
+
+                textLabels.forEach { label ->
+                    val textStyle = TextStyle(
+                        color = parseColor(label.color),
+                        fontSize = label.fontSize.sp,
+                        fontWeight = if (label.bold) FontWeight.Bold else FontWeight.Normal
+                    )
+
+                    val measuredText = textMeasurer.measure(
+                        text = label.text,
+                        style = textStyle
+                    )
+
+                    val textWidth = measuredText.size.width.toFloat()
+                    val textHeight = measuredText.size.height.toFloat()
+                    val centeredX = label.x - (textWidth / 2f)
+                    val centeredY = label.y - (textHeight / 2f)
+
+                    if (label.hasBackground) {
+                        val padding = label.fontSize * 0.3f
+                        val rectLeft = centeredX - padding
+                        val rectTop = centeredY - padding
+                        val rectRight = centeredX + textWidth + padding
+                        val rectBottom = centeredY + textHeight + padding
+
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = 0.9f),
+                            topLeft = Offset(rectLeft, rectTop),
+                            size = Size(rectRight - rectLeft, rectBottom - rectTop),
+                            cornerRadius = CornerRadius(padding / 2f)
+                        )
+                    }
+
+                    drawText(
+                        textLayoutResult = measuredText,
+                        topLeft = Offset(centeredX, centeredY)
+                    )
+                }
             }
         }
 

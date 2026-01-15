@@ -9,9 +9,21 @@ import com.oriooneee.jet.navigation.domain.entities.graph.Node
 import com.oriooneee.jet.navigation.domain.entities.graph.UniversityNavGraph
 import com.oriooneee.jet.navigation.domain.entities.plan.Flor
 import com.oriooneee.jet.navigation.domain.entities.plan.UniversityPlan
+import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+@Serializable
+data class TextLabel(
+    val text: String,
+    val x: Float,
+    val y: Float,
+    val fontSize: Float,
+    val color: String = "#000000",
+    val bold: Boolean = false,
+    val hasBackground: Boolean = false
+)
 
 class NavigationEngine(
     private val navGraph: UniversityNavGraph,
@@ -62,13 +74,13 @@ class NavigationEngine(
         startNodeColor: Color,
         endNodeColor: Color,
     ): NavigationDirection {
-        val path = findPath(from.id, to.id) ?: return NavigationDirection(emptyList(), 0.0)
+        val path = findPath(from, to) ?: return NavigationDirection(emptyList(), 0.0)
         val totalDistance = calculateTotalDistance(path)
         val steps = buildNavigationSteps(path, planColor, directionColor, startNodeColor, endNodeColor)
         return NavigationDirection(steps, totalDistance)
     }
 
-    private fun findPath(startId: String, endId: String): List<Node>? {
+    private fun findPath(start: Node, end: Node): List<Node>? {
         val adjacency = mutableMapOf<String, MutableList<Pair<String, Double>>>()
         navGraph.edges.forEach { edge ->
             adjacency.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
@@ -79,36 +91,54 @@ class NavigationEngine(
         val nodesMap = navGraph.nodes.associateBy { it.id }
 
         navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
-        distances[startId] = 0.0
+        distances[start.id] = 0.0
 
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
-        pq.offer(startId to 0.0)
+        pq.offer(start.id to 0.0)
+
+        val startClean = start.id.filter { it.isLetterOrDigit() }
+        val endClean = end.id.filter { it.isLetterOrDigit() }
 
         while (pq.isNotEmpty()) {
             val (u, d) = pq.poll() ?: break
 
             if (d > (distances[u] ?: Double.MAX_VALUE)) continue
-            if (u == endId) break
+            if (u == end.id) break
 
             adjacency[u]?.forEach { (v, weight) ->
-                val alt = d + weight
-                if (alt < (distances[v] ?: Double.MAX_VALUE)) {
-                    distances[v] = alt
-                    previous[v] = u
-                    pq.offer(v to alt)
+                val node = nodesMap[v]
+                if (node != null) {
+                    val shouldSkip = if (node.id.contains("AUD")) {
+                        val nodeClean = node.id.filter { it.isLetterOrDigit() }
+                        node.id != start.id &&
+                                node.id != end.id &&
+                                nodeClean != startClean &&
+                                nodeClean != endClean
+                    } else {
+                        false
+                    }
+
+                    if (!shouldSkip) {
+                        val alt = d + weight
+                        if (alt < (distances[v] ?: Double.MAX_VALUE)) {
+                            distances[v] = alt
+                            previous[v] = u
+                            pq.offer(v to alt)
+                        }
+                    }
                 }
             }
         }
 
-        if (distances[endId] == Double.MAX_VALUE) return null
+        if (distances[end.id] == Double.MAX_VALUE) return null
 
         val path = mutableListOf<Node>()
-        var current: String? = endId
+        var current: String? = end.id
         while (current != null) {
             nodesMap[current]?.let { path.add(it) }
             current = previous[current]
-            if (current == startId) {
-                nodesMap[startId]?.let { path.add(it) }
+            if (current == start.id) {
+                nodesMap[start.id]?.let { path.add(it) }
                 break
             }
         }
@@ -141,12 +171,17 @@ class NavigationEngine(
 
         val floorGroups = groupPathByFloor(fullPath)
 
-        floorGroups.forEachIndexed { index, (floorNum, stepNodes) ->
+        val nonEmptyFloorGroups = floorGroups.filter { (_, stepNodes) ->
+            stepNodes.isNotEmpty()
+        }
+
+        nonEmptyFloorGroups.forEachIndexed { index, (floorNum, stepNodes) ->
             if (index > 0) {
+                val previousFloor = nonEmptyFloorGroups[index - 1].first
                 steps.add(
                     NavigationStep.TransitionToFlor(
                         to = floorNum,
-                        from = floorGroups[index - 1].first
+                        from = previousFloor
                     )
                 )
             }
@@ -159,7 +194,7 @@ class NavigationEngine(
                 else -> plan.flor1
             }
 
-            val (svgBytes, pointOfInterest) = generateSvg(
+            val (svgBytes, pointOfInterest, textLabels) = generateSvg(
                 floorNum = floorNum,
                 flor = florData,
                 stepPath = stepNodes,
@@ -171,7 +206,7 @@ class NavigationEngine(
                 endColor = endNodeColor
             )
 
-            steps.add(NavigationStep.ByFlor(floorNum, svgBytes, pointOfInterest))
+            steps.add(NavigationStep.ByFlor(floorNum, svgBytes, pointOfInterest, textLabels))
         }
 
         return steps
@@ -217,7 +252,7 @@ class NavigationEngine(
         dirColor: Color,
         startColor: Color,
         endColor: Color
-    ): Pair<ByteArray, Offset> {
+    ): Triple<ByteArray, Offset, List<TextLabel>> {
         val allX = mutableListOf<Double>()
         val allY = mutableListOf<Double>()
 
@@ -225,7 +260,7 @@ class NavigationEngine(
         flor.lines.forEach { l -> allX.add(l.x1); allX.add(l.x2); allY.add(l.y1); allY.add(l.y2) }
         flor.texts.forEach { t -> allX.add(t.x); allY.add(t.y) }
 
-        if (allX.isEmpty()) return Pair(ByteArray(0), Offset.Zero)
+        if (allX.isEmpty()) return Triple(ByteArray(0), Offset.Zero, emptyList())
 
         val minX = allX.minOrNull() ?: 0.0
         val maxX = allX.maxOrNull() ?: 1.0
@@ -235,7 +270,7 @@ class NavigationEngine(
         val dataW = maxX - minX
         val dataH = maxY - minY
 
-        if (dataW == 0.0 || dataH == 0.0) return Pair(ByteArray(0), Offset.Zero)
+        if (dataW == 0.0 || dataH == 0.0) return Triple(ByteArray(0), Offset.Zero, emptyList())
 
         val drawWidth = outputWidth * (1 - paddingPct * 2)
         val scale = drawWidth / dataW
@@ -264,6 +299,8 @@ class NavigationEngine(
         val dirHex = colorToHex(dirColor)
         val startHex = colorToHex(startColor)
         val endHex = colorToHex(endColor)
+
+        val textLabels = mutableListOf<TextLabel>()
 
         val sb = StringBuilder()
         sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${outputWidth.toInt()}\" height=\"$outputHeight\" viewBox=\"0 0 ${outputWidth.toInt()} $outputHeight\">")
@@ -304,7 +341,6 @@ class NavigationEngine(
         }
         sb.append("</g>")
 
-        sb.append("<g id=\"text\">")
         flor.texts.forEach { txt ->
             var clean = txt.text
             val sbClean = StringBuilder()
@@ -318,13 +354,23 @@ class NavigationEngine(
                 .trim()
 
             if (clean.isNotEmpty()) {
-                sb.append("<text x=\"${tx(txt.x)}\" y=\"${ty(txt.y)}\" fill=\"#000000\">$clean</text>")
+                val fontSize = (stroke * 6).toFloat()
+                textLabels.add(
+                    TextLabel(
+                        text = clean,
+                        x = txVal(txt.x).toFloat(),
+                        y = tyVal(txt.y).toFloat(),
+                        fontSize = fontSize,
+                        color = "#666666",
+                        bold = false,
+                        hasBackground = false
+                    )
+                )
             }
         }
-        sb.append("</g>")
 
         sb.append("</svg>")
-        return Pair(sb.toString().encodeToByteArray(), pointOfInterest)
+        return Triple(sb.toString().encodeToByteArray(), pointOfInterest, textLabels)
     }
 
     private fun Double.round(decimals: Int): String {

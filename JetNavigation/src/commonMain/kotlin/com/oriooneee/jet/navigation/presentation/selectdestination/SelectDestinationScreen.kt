@@ -101,16 +101,18 @@ fun SelectDestinationScreen(
         }
 
         allNodes.filter { it.id.contains(searchQuery, ignoreCase = true) }
-            .sortedWith(compareBy<Node> { !it.id.contains("WC") }
+            .sortedWith(
+                compareBy<Node> { !it.id.contains("ENTER") }
+                .thenBy { !it.id.contains("WC") }.reversed()
                 .thenBy { node ->
                     if (node.id.contains("AUD")) {
-                        node.id.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
+                        Int.MAX_VALUE - (node.id.filter { it.isDigit() }.toIntOrNull() ?: 0)
                     } else {
                         Int.MAX_VALUE
                     }
                 }
                 .thenBy { it.id }
-            )
+            ).reversed()
     }
 
     LaunchedEffect(Unit) {
@@ -180,18 +182,13 @@ fun SelectDestinationScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(filteredNodes) { node ->
-                    val displayName = when {
-                        node.id.contains("WC_M") -> "WC Man"
-                        node.id.contains("WC_W") -> "WC Woman"
-                        node.id.contains("AUD") -> node.id.filter { it.isDigit() }
-                        else -> node.id.replace("_", " ")
-                    }
-
+                items(filteredNodes.filter {
+                    !it.label.isNullOrBlank()
+                }) { node ->
                     ListItem(
                         headlineContent = {
                             Text(
-                                displayName,
+                                node.label ?: node.id,
                                 modifier = Modifier.fillMaxWidth(),
                                 textAlign = TextAlign.Center,
                             )
