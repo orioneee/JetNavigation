@@ -11,6 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -52,7 +53,9 @@ fun NavigationApp() {
     // Lifted State: We keep the selected nodes here to persist them across screen changes
     var startNode by remember { mutableStateOf<Node?>(null) }
     var endNode by remember { mutableStateOf<Node?>(null) }
-    MaterialTheme {
+    MaterialTheme(
+        darkColorScheme()
+    ) {
         CompositionLocalProvider(LocalBackStack provides backStack) {
             NavDisplay(
                 backStack = backStack,

@@ -3,6 +3,9 @@ package com.oriooneee.jet.navigation.presentation
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,6 +33,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +41,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Remove
@@ -180,160 +186,200 @@ fun NavigationScreen(
     val routeColor = MaterialTheme.colorScheme.primary
     val startNodeColor = MaterialTheme.colorScheme.primary
     val endNodeColor = MaterialTheme.colorScheme.primary
+    BoxWithConstraints {
 
-    LaunchedEffect(startNode, endNode) {
-        viewModel.onStartNodeSelected(startNode)
-        viewModel.onEndNodeSelected(endNode)
-        if (startNode != null && endNode != null && startNode != endNode) {
-            viewModel.calculateRoute()
+        val isLargeScreen = maxWidth >= 700.dp
+
+        var isPanelExpanded by remember { mutableStateOf(true) }
+
+        LaunchedEffect(startNode, endNode) {
+            viewModel.onStartNodeSelected(startNode)
+            viewModel.onEndNodeSelected(endNode)
+            if (startNode != null && endNode != null && startNode != endNode) {
+                viewModel.calculateRoute()
+            }
         }
-    }
 
-    Scaffold {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Card(
+        LaunchedEffect(uiState.navigationSteps) {
+            if (!isLargeScreen && uiState.navigationSteps.isNotEmpty()) {
+                isPanelExpanded = false
+            }
+        }
+
+        Scaffold {
+            Column(
                 modifier = Modifier
-                    .statusBarsPadding()
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 0.dp,
-                        bottom = 16.dp
-                    ),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                Card(
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 0.dp,
+                            bottom = 16.dp
+                        ),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
-                    if (uiState.currentStep != null) {
-                        AnimatedContent(
-                            targetState = uiState.currentStep!!,
-                            transitionSpec = {
-                                fadeIn(androidx.compose.animation.core.tween(400)) + scaleIn(
-                                    initialScale = 0.95f
-                                ) togetherWith
-                                        fadeOut(androidx.compose.animation.core.tween(400))
-                            },
-                            label = "MapAnim"
-                        ) { step ->
-                            when (step) {
-                                is NavigationStep.ByFlor -> {
-                                    Box(modifier = Modifier.fillMaxSize()) {
-                                        ZoomableMapCanvas(
-                                            renderData = step.image,
-                                            initFocusPoint = step.pointOfInterest,
-                                            planColor = planColor,
-                                            labelColor = planLabelColor,
-                                            routeColor = routeColor,
-                                            startNodeColor = startNodeColor,
-                                            endNodeColor = endNodeColor
-                                        )
-                                        FloorBadge(
-                                            floorNumber = step.flor,
-                                            modifier = Modifier
-                                                .align(Alignment.TopStart)
-                                                .padding(16.dp)
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (uiState.currentStep != null) {
+                            AnimatedContent(
+                                targetState = uiState.currentStep!!,
+                                transitionSpec = {
+                                    fadeIn(androidx.compose.animation.core.tween(400)) + scaleIn(
+                                        initialScale = 0.95f
+                                    ) togetherWith
+                                            fadeOut(androidx.compose.animation.core.tween(400))
+                                },
+                                label = "MapAnim"
+                            ) { step ->
+                                when (step) {
+                                    is NavigationStep.ByFlor -> {
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            ZoomableMapCanvas(
+                                                renderData = step.image,
+                                                initFocusPoint = step.pointOfInterest,
+                                                planColor = planColor,
+                                                labelColor = planLabelColor,
+                                                routeColor = routeColor,
+                                                startNodeColor = startNodeColor,
+                                                endNodeColor = endNodeColor
+                                            )
+                                            FloorBadge(
+                                                floorNumber = step.flor,
+                                                modifier = Modifier
+                                                    .align(Alignment.TopStart)
+                                                    .padding(16.dp)
+                                            )
+                                        }
+                                    }
+
+                                    is NavigationStep.TransitionToFlor -> {
+                                        TransitionScreen(
+                                            targetFloor = step.to,
+                                            currentFlor = step.from
                                         )
                                     }
                                 }
-
-                                is NavigationStep.TransitionToFlor -> {
-                                    TransitionScreen(
-                                        targetFloor = step.to,
-                                        currentFlor = step.from
-                                    )
-                                }
                             }
-                        }
-                    } else {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.LocationOn,
-                                contentDescription = null,
-                                modifier = Modifier.size(80.dp),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                            )
-                            Spacer(Modifier.height(24.dp))
-                            Text(
-                                text = "Ready to Navigate",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "Select your start and destination points to view the route on the map",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
+                        } else {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.LocationOn,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(80.dp),
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                )
+                                Spacer(Modifier.height(24.dp))
+                                Text(
+                                    text = "Ready to Navigate",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "Select your start and destination points to view the route on the map",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 16.dp,
-                tonalElevation = 4.dp
-            ) {
-                Box(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 16.dp,
+                    tonalElevation = 4.dp
                 ) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 300.dp),
-                        modifier = Modifier
-                            .navigationBarsPadding()
-                            .padding(24.dp)
-                            .widthIn(max = 800.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(
-                            16.dp,
-                            Alignment.CenterHorizontally
+                    Column(
+                        modifier = Modifier.animateContentSize(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
                         )
                     ) {
-                        item {
-                            DestinationInputPanel(
-                                startNode = startNode,
-                                endNode = endNode,
-                                isLoading = uiState.isLoading,
-                                onSelectStart = onSelectStart,
-                                onSelectEnd = onSelectEnd,
-                                onSwap = onSwapNodes
-                            )
+                        if (!isLargeScreen) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isPanelExpanded = !isPanelExpanded },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isPanelExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Toggle Panel",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
                         }
 
-                        item {
-                            this@Column.AnimatedVisibility(
-                                visible = uiState.navigationSteps.isNotEmpty() && !uiState.isLoading,
-                                enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut()
+                        if (isLargeScreen || isPanelExpanded) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 300.dp),
+                                modifier = Modifier
+                                    .navigationBarsPadding()
+                                    .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
+                                    .widthIn(max = 800.dp)
+                                    .align(Alignment.CenterHorizontally),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(
+                                    16.dp,
+                                    Alignment.CenterHorizontally
+                                )
                             ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    NavigationControls(
-                                        currentStepIndex = uiState.currentStepIndex,
-                                        totalSteps = uiState.navigationSteps.size,
-                                        routeStats = uiState.routeStats,
-                                        onPrevious = viewModel::previousStep,
-                                        onNext = viewModel::nextStep
+                                item (
+                                    span = { GridItemSpan(maxLineSpan) }
+                                ){
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+                                item {
+                                    DestinationInputPanel(
+                                        startNode = startNode,
+                                        endNode = endNode,
+                                        isLoading = uiState.isLoading,
+                                        onSelectStart = onSelectStart,
+                                        onSelectEnd = onSelectEnd,
+                                        onSwap = onSwapNodes
                                     )
+                                }
+
+                                item {
+                                    this@Column.AnimatedVisibility(
+                                        visible = uiState.navigationSteps.isNotEmpty() && !uiState.isLoading,
+                                        enter = expandVertically() + fadeIn(),
+                                        exit = shrinkVertically() + fadeOut()
+                                    ) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                            NavigationControls(
+                                                currentStepIndex = uiState.currentStepIndex,
+                                                totalSteps = uiState.navigationSteps.size,
+                                                routeStats = uiState.routeStats,
+                                                onPrevious = viewModel::previousStep,
+                                                onNext = viewModel::nextStep
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

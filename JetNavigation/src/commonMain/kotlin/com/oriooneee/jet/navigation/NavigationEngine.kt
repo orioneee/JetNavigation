@@ -314,6 +314,8 @@ class NavigationEngine(
         val strokeBase = max(1.0, outputHeight * 0.001)
         val textLabels = mutableListOf<TextLabel>()
 
+        val boundaryMargin = drawWidth * 0.05
+
         flor.texts.forEach { txt ->
             var clean = txt.text
             val sbClean = StringBuilder()
@@ -327,14 +329,27 @@ class NavigationEngine(
                 .trim()
 
             if (clean.isNotEmpty()) {
+                val cx = tx(txt.x)
+                val cy = ty(txt.y)
+
+                val isNearEdge = cx < boundaryMargin || cx > (drawWidth - boundaryMargin) ||
+                        cy < boundaryMargin || cy > (outputHeight - boundaryMargin)
+
                 val baseSize = (strokeBase * 6).toFloat()
-                val finalSize = if (clean.length > 7) baseSize * 0.7f else baseSize
+                var finalSize = baseSize
+
+                if (clean.length > 7 || isNearEdge) {
+                    finalSize = baseSize * 0.7f
+                }
+                if (isNearEdge && clean.length > 7) {
+                    finalSize = baseSize * 0.5f
+                }
 
                 textLabels.add(
                     TextLabel(
                         text = clean,
-                        x = tx(txt.x),
-                        y = ty(txt.y),
+                        x = cx,
+                        y = cy,
                         fontSize = finalSize,
                         color = "#666666"
                     )
