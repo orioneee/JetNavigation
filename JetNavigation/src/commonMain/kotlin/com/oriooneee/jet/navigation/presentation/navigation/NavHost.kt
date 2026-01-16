@@ -38,7 +38,14 @@ fun NavigationApp() {
                 navController = navController,
                 startDestination = Route.NavigationScreen
             ) {
-                composable<Route.NavigationScreen> {
+                composable<Route.NavigationScreen>(
+                    exitTransition = {
+                        fadeOut(animationSpec = tween(300))
+                    },
+                    popEnterTransition = {
+                        fadeIn(animationSpec = tween(300))
+                    }
+                ) {
                     NavigationScreen(vm)
                 }
 
@@ -48,6 +55,12 @@ fun NavigationApp() {
                             initialOffsetY = { it },
                             animationSpec = tween(300)
                         ) + fadeIn(animationSpec = tween(300))
+                    },
+                    exitTransition = {
+                        fadeOut(animationSpec = tween(300))
+                    },
+                    popEnterTransition = {
+                        fadeIn(animationSpec = tween(300))
                     },
                     popExitTransition = {
                         slideOutVertically(
