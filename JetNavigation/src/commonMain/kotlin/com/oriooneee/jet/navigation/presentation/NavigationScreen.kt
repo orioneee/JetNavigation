@@ -358,10 +358,20 @@ fun NavigationScreen(
                             endNode = uiState.endNode,
                             isLoading = uiState.isLoading,
                             onSelectStart = {
-                                navController.navigate(Route.SelectDestination(isStartNode = true))
+                                navController.navigate(
+                                    Route.SelectDestination(
+                                        isStartNode = true,
+                                        false
+                                    )
+                                )
                             },
                             onSelectEnd = {
-                                navController.navigate(Route.SelectDestination(isStartNode = false))
+                                navController.navigate(
+                                    Route.SelectDestination(
+                                        isStartNode = false,
+                                        uiState.startNode != null
+                                    )
+                                )
                             },
                             onSwapNodes = viewModel::swapNodes,
                             isExpanded = isLargeScreen || isPanelExpanded,

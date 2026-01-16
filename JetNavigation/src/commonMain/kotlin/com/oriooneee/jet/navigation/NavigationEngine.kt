@@ -4,12 +4,12 @@ import androidx.compose.ui.geometry.Offset
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 import com.oriooneee.jet.navigation.domain.entities.graph.Node
+import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
 import com.oriooneee.jet.navigation.domain.entities.graph.UniversityNavGraph
 import com.oriooneee.jet.navigation.domain.entities.plan.Flor
 import com.oriooneee.jet.navigation.domain.entities.plan.UniversityPlan
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 @Serializable
 data class TextLabel(
@@ -42,6 +42,7 @@ class NavigationEngine(
     private val zToFloor = mutableMapOf<Double, Int>()
 
     init {
+        // ... (init logic remains same)
         val floorZSamples = mutableMapOf<Int, MutableList<Double>>()
 
         navGraph.nodes.forEach { node ->
@@ -73,6 +74,38 @@ class NavigationEngine(
         }
     }
 
+    fun resolveSelection(
+        result: SelectNodeResult,
+        referenceNode: Node?
+    ): Node? {
+        return when (result) {
+            is SelectNodeResult.SelectedNode -> result.node
+            is SelectNodeResult.NearestManWC -> {
+                if (referenceNode == null) return null
+                findNearestNode(referenceNode) {
+                    it.id.contains("WC", ignoreCase = true) &&
+                            (it.id.contains("MAN", ignoreCase = true) || it.id.contains("_M_", ignoreCase = true))
+                }
+            }
+            is SelectNodeResult.NearestWomanWC -> {
+                if (referenceNode == null) return null
+                findNearestNode(referenceNode) {
+                    it.id.contains("WC", ignoreCase = true) &&
+                            (it.id.contains("WOMAN", ignoreCase = true) || it.id.contains("_W_", ignoreCase = true))
+                }
+            }
+            is SelectNodeResult.NearestMainEntrance -> {
+                if (referenceNode == null) return null
+                findNearestNode(referenceNode) {
+                    // Ищем ENTER или EXIT, но ИСКЛЮЧАЕМ переходы в другие корпуса (TO_BUILDING)
+                    (it.id.contains("ENTER", ignoreCase = true) || it.id.contains("EXIT", ignoreCase = true)) &&
+                            !it.id.contains("TO_BUILDING", ignoreCase = true)
+                }
+            }
+        }
+    }
+
+    // ... (rest of the class: getRoute, findNearestNode, findPath, etc. remains exactly the same as before)
     fun getRoute(
         from: Node,
         to: Node
@@ -81,6 +114,45 @@ class NavigationEngine(
         val totalDistance = calculateTotalDistance(path)
         val steps = buildNavigationSteps(path)
         return NavigationDirection(steps, totalDistance)
+    }
+
+    private fun findNearestNode(
+        referenceNode: Node,
+        criteria: (Node) -> Boolean
+    ): Node? {
+        val adjacency = mutableMapOf<String, MutableList<Pair<String, Double>>>()
+        navGraph.edges.forEach { edge ->
+            adjacency.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
+        }
+
+        val distances = mutableMapOf<String, Double>()
+        val nodesMap = navGraph.nodes.associateBy { it.id }
+
+        navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
+        distances[referenceNode.id] = 0.0
+
+        val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
+        pq.offer(referenceNode.id to 0.0)
+
+        while (pq.isNotEmpty()) {
+            val (u, d) = pq.poll() ?: break
+
+            if (d > (distances[u] ?: Double.MAX_VALUE)) continue
+
+            val currentNode = nodesMap[u]
+            if (currentNode != null && u != referenceNode.id && criteria(currentNode)) {
+                return currentNode
+            }
+
+            adjacency[u]?.forEach { (v, weight) ->
+                val alt = d + weight
+                if (alt < (distances[v] ?: Double.MAX_VALUE)) {
+                    distances[v] = alt
+                    pq.offer(v to alt)
+                }
+            }
+        }
+        return null
     }
 
     private fun findPath(start: Node, end: Node): List<Node>? {
@@ -349,57 +421,57 @@ class NavigationEngine(
             textLabels = textLabels
         )
     }
-}
 
-private class MinHeap<T>(private val comparator: Comparator<T>) {
-    private val heap = ArrayList<T>()
+    private class MinHeap<T>(private val comparator: Comparator<T>) {
+        private val heap = ArrayList<T>()
 
-    fun isNotEmpty(): Boolean = heap.isNotEmpty()
+        fun isNotEmpty(): Boolean = heap.isNotEmpty()
 
-    fun offer(element: T) {
-        heap.add(element)
-        siftUp(heap.size - 1)
-    }
-
-    fun poll(): T? {
-        if (heap.isEmpty()) return null
-        val result = heap[0]
-        val last = heap.removeAt(heap.size - 1)
-        if (heap.isNotEmpty()) {
-            heap[0] = last
-            siftDown(0)
+        fun offer(element: T) {
+            heap.add(element)
+            siftUp(heap.size - 1)
         }
-        return result
-    }
 
-    private fun siftUp(index: Int) {
-        var k = index
-        while (k > 0) {
-            val parent = (k - 1) / 2
-            if (comparator.compare(heap[k], heap[parent]) >= 0) break
-            swap(k, parent)
-            k = parent
-        }
-    }
-
-    private fun siftDown(index: Int) {
-        var k = index
-        val half = heap.size / 2
-        while (k < half) {
-            var child = 2 * k + 1
-            val right = child + 1
-            if (right < heap.size && comparator.compare(heap[right], heap[child]) < 0) {
-                child = right
+        fun poll(): T? {
+            if (heap.isEmpty()) return null
+            val result = heap[0]
+            val last = heap.removeAt(heap.size - 1)
+            if (heap.isNotEmpty()) {
+                heap[0] = last
+                siftDown(0)
             }
-            if (comparator.compare(heap[k], heap[child]) <= 0) break
-            swap(k, child)
-            k = child
+            return result
         }
-    }
 
-    private fun swap(i: Int, j: Int) {
-        val temp = heap[i]
-        heap[i] = heap[j]
-        heap[j] = temp
+        private fun siftUp(index: Int) {
+            var k = index
+            while (k > 0) {
+                val parent = (k - 1) / 2
+                if (comparator.compare(heap[k], heap[parent]) >= 0) break
+                swap(k, parent)
+                k = parent
+            }
+        }
+
+        private fun siftDown(index: Int) {
+            var k = index
+            val half = heap.size / 2
+            while (k < half) {
+                var child = 2 * k + 1
+                val right = child + 1
+                if (right < heap.size && comparator.compare(heap[right], heap[child]) < 0) {
+                    child = right
+                }
+                if (comparator.compare(heap[k], heap[child]) <= 0) break
+                swap(k, child)
+                k = child
+            }
+        }
+
+        private fun swap(i: Int, j: Int) {
+            val temp = heap[i]
+            heap[i] = heap[j]
+            heap[j] = temp
+        }
     }
 }

@@ -8,5 +8,8 @@ sealed interface Route {
     data object NavigationScreen : Route
 
     @Serializable
-    data class SelectDestination(val isStartNode: Boolean) : Route
+    data class SelectDestination(
+        val isStartNode: Boolean,
+        val isSelectedStartNode: Boolean
+    ) : Route
 }

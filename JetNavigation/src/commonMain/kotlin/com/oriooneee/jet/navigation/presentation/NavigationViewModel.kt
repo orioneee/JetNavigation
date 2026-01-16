@@ -1,12 +1,12 @@
 package com.oriooneee.jet.navigation.presentation
 
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.oriooneee.jet.navigation.NavigationEngine
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 import com.oriooneee.jet.navigation.domain.entities.graph.Node
+import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
 import com.oriooneee.jet.navigation.domain.entities.graph.UniversityNavGraph
 import com.oriooneee.jet.navigation.domain.entities.plan.UniversityPlan
 import jetnavigation.jetnavigation.generated.resources.Res
@@ -20,7 +20,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.ExperimentalResourceApi
-import org.jetbrains.compose.resources.InternalResourceApi
 
 data class NavigationUiState(
     val allNodes: List<Node> = emptyList(),
@@ -49,7 +48,7 @@ class NavigationViewModel : ViewModel() {
         loadData()
     }
 
-    @OptIn(InternalResourceApi::class, ExperimentalResourceApi::class)
+    @OptIn(ExperimentalResourceApi::class)
     private fun loadData() {
         viewModelScope.launch(Dispatchers.Default) {
             _uiState.update { it.copy(isLoading = true) }
@@ -83,36 +82,63 @@ class NavigationViewModel : ViewModel() {
         }
     }
 
-    fun onStartNodeSelected(node: Node?) {
-        _uiState.update {
-            it.copy(
-                startNode = node,
-                navigationSteps = emptyList(),
-                routeStats = null,
-                currentStepIndex = 0
-            )
-        }
-        if(uiState.value.endNode != null && node != null){
-            calculateRoute()
+    fun onStartNodeSelected(result: SelectNodeResult) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val engine = navigationEngine.value ?: return@launch
+            val referenceNode = uiState.value.endNode
+            val resolvedNode = engine.resolveSelection(result, referenceNode)
+
+            withContext(Dispatchers.Main) {
+                if (resolvedNode != null) {
+                    _uiState.update {
+                        it.copy(
+                            startNode = resolvedNode,
+                            navigationSteps = emptyList(),
+                            routeStats = null,
+                            currentStepIndex = 0,
+                            error = null
+                        )
+                    }
+                    if (uiState.value.endNode != null) {
+                        calculateRoute()
+                    }
+                } else if (result !is SelectNodeResult.SelectedNode) {
+                    _uiState.update { it.copy(error = "Select a destination first to find the nearest start point") }
+                }
+            }
         }
     }
 
-    fun onEndNodeSelected(node: Node?) {
-        _uiState.update {
-            it.copy(
-                endNode = node,
-                navigationSteps = emptyList(),
-                routeStats = null,
-                currentStepIndex = 0
-            )
-        }
-        if(uiState.value.startNode != null && node != null){
-            calculateRoute()
+    fun onEndNodeSelected(result: SelectNodeResult) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val engine = navigationEngine.value ?: return@launch
+            val referenceNode = uiState.value.startNode
+            val resolvedNode = engine.resolveSelection(result, referenceNode)
+
+            withContext(Dispatchers.Main) {
+                if (resolvedNode != null) {
+                    _uiState.update {
+                        it.copy(
+                            endNode = resolvedNode,
+                            navigationSteps = emptyList(),
+                            routeStats = null,
+                            currentStepIndex = 0,
+                            error = null
+                        )
+                    }
+                    if (uiState.value.startNode != null) {
+                        calculateRoute()
+                    }
+                } else if (result !is SelectNodeResult.SelectedNode) {
+                    _uiState.update { it.copy(error = "Select a start point first to find the nearest destination") }
+                }
+            }
         }
     }
-    fun swapNodes(){
+
+    fun swapNodes() {
         val currentStart = uiState.value.startNode
-        val currentEnd =  uiState.value.endNode
+        val currentEnd = uiState.value.endNode
 
         _uiState.update {
             it.copy(
@@ -123,7 +149,7 @@ class NavigationViewModel : ViewModel() {
                 currentStepIndex = 0
             )
         }
-        if(currentStart != null && currentEnd != null){
+        if (currentStart != null && currentEnd != null) {
             calculateRoute()
         }
     }

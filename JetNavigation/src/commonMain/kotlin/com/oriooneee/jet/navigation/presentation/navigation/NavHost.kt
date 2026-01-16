@@ -77,6 +77,7 @@ fun NavigationApp() {
                             onBack = {
                                 navController.popBackStack()
                             },
+                            isSelectedStartNode = route.isSelectedStartNode,
                             isStartNode = isStartNode
                         )
                     }
