@@ -203,7 +203,8 @@ fun SelectDestinationScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 val key = if (isStartNode) KEY_SELECTED_START_NODE else KEY_SELECTED_END_NODE
-                                navController.previousBackStackEntry?.savedStateHandle?.set(key, node)
+                                navController.previousBackStackEntry?.savedStateHandle?.set(key,
+                                    Json.encodeToString(node))
                                 navController.popBackStack()
                             }
                     )

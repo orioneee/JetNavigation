@@ -104,6 +104,8 @@ import com.oriooneee.jet.navigation.domain.entities.graph.Node
 import com.oriooneee.jet.navigation.presentation.navigation.LocalNavController
 import com.oriooneee.jet.navigation.presentation.navigation.Route
 import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 @Composable
 fun rememberZoomState(minScale: Float = 0.1f, maxScale: Float = 10f) =
@@ -188,24 +190,24 @@ fun NavigationScreen(
         navController.currentBackStackEntryFlow.collect {
             val savedStateHandle = it.savedStateHandle
             launch {
-                savedStateHandle.getStateFlow<Node?>(
+                savedStateHandle.getStateFlow<String?>(
                     KEY_SELECTED_START_NODE,
                     null
                 ).collect { node ->
                     if (node != null) {
-                        viewModel.onStartNodeSelected(node)
-                        it.savedStateHandle.remove<Node>(KEY_SELECTED_START_NODE)
+                        viewModel.onStartNodeSelected(Json.decodeFromString(node))
+                        it.savedStateHandle.remove<String>(KEY_SELECTED_START_NODE)
                     }
                 }
             }
             launch {
-                savedStateHandle.getStateFlow<Node?>(
+                savedStateHandle.getStateFlow<String?>(
                     KEY_SELECTED_END_NODE,
                     null
                 ).collect { node ->
                     if (node != null) {
-                        viewModel.onEndNodeSelected(node)
-                        it.savedStateHandle.remove<Node>(KEY_SELECTED_END_NODE)
+                        viewModel.onEndNodeSelected(Json.decodeFromString(node))
+                        it.savedStateHandle.remove<String>(KEY_SELECTED_END_NODE)
                     }
                 }
             }
@@ -216,11 +218,6 @@ fun NavigationScreen(
     BoxWithConstraints {
         val isLargeScreen = maxWidth >= 650.dp
         var isPanelExpanded by remember { mutableStateOf(true) }
-        LaunchedEffect(uiState.navigationSteps) {
-            if (!isLargeScreen && uiState.navigationSteps.isNotEmpty()) {
-                isPanelExpanded = false
-            }
-        }
 
         Scaffold { paddingValues ->
             Column(
