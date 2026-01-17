@@ -5,10 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.oriooneee.jet.navigation.NavigationEngine
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
+import com.oriooneee.jet.navigation.domain.entities.graph.MasterNavigation
 import com.oriooneee.jet.navigation.domain.entities.graph.Node
 import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
-import com.oriooneee.jet.navigation.domain.entities.graph.UniversityNavGraph
-import com.oriooneee.jet.navigation.domain.entities.plan.UniversityPlan
 import jetnavigation.jetnavigation.generated.resources.Res
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,11 +17,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 
 data class NavigationUiState(
-    val allNodes: List<Node> = emptyList(),
     val startNode: Node? = null,
     val endNode: Node? = null,
     val navigationSteps: List<NavigationStep> = emptyList(),
@@ -54,25 +51,11 @@ class NavigationViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true) }
 
             try {
-                val navGraphContent = Res.readBytes("files/navigation_graph.json").decodeToString()
-                val navGraph = Json.decodeFromString<UniversityNavGraph>(navGraphContent)
 
-                val sceneContent = Res.readBytes("files/scene.json").decodeToString()
-                val universityPlan = Json.decodeFromString<UniversityPlan>(sceneContent)
-
-                val engine = NavigationEngine(
-                    navGraph = navGraph,
-                    plan = universityPlan
-                )
+                val engine = NavigationEngine(MasterNavigation.loadFromAssets())
                 navigationEngine.value = engine
-
-                val filteredNodes = navGraph.nodes.filter {
-                    !it.id.contains("TURN", ignoreCase = true) && !it.id.contains("STAIRS", ignoreCase = true)
-                }
-
                 _uiState.update {
                     it.copy(
-                        allNodes = filteredNodes,
                         isLoading = false
                     )
                 }

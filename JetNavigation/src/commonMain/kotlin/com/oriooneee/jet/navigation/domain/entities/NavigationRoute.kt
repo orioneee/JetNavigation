@@ -17,6 +17,10 @@ sealed class NavigationStep {
         val to: Int,
         val from: Int
     ) : NavigationStep()
+    data class TransitionToBuilding(
+        val form: Int,
+        val to: Int
+    ) : NavigationStep()
 }
 
 data class NavigationDirection(

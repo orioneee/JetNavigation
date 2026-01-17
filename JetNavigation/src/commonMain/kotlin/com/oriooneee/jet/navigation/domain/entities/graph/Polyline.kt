@@ -1,4 +1,4 @@
-package com.oriooneee.jet.navigation.domain.entities.plan
+package com.oriooneee.jet.navigation.domain.entities.graph
 
 
 import kotlinx.serialization.SerialName

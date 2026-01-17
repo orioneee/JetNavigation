@@ -37,10 +37,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Remove
@@ -278,6 +280,13 @@ fun NavigationScreen(
                                         TransitionScreen(
                                             targetFloor = step.to,
                                             currentFlor = step.from
+                                        )
+                                    }
+
+                                    is NavigationStep.TransitionToBuilding -> {
+                                        TransitionToBuildingScreen(
+                                            fromBuilding = step.form,
+                                            toBuilding = step.to
                                         )
                                     }
                                 }
@@ -769,64 +778,6 @@ fun ZoomableMapCanvas(
     val contentSize = remember(renderData) { Size(renderData.width, renderData.height) }
     val density = LocalDensity.current
 
-    val renderedLabels = remember(renderData, density) {
-        val linesForCollision = mutableListOf<Pair<Offset, Offset>>()
-        renderData.polylines.forEach { poly ->
-            for (i in 0 until poly.size - 1) {
-                linesForCollision.add(poly[i] to poly[i + 1])
-            }
-        }
-        renderData.polygons.forEach { poly ->
-            for (i in 0 until poly.size - 1) {
-                linesForCollision.add(poly[i] to poly[i + 1])
-            }
-            if (poly.isNotEmpty()) linesForCollision.add(poly.last() to poly.first())
-        }
-        linesForCollision.addAll(renderData.singleLines)
-
-        renderData.textLabels.map { label ->
-            val maxFontSize = 40.sp
-            val minFontSize = 6.sp
-            var currentSize = maxFontSize
-            var finalSize = minFontSize
-            var isVisible = false
-            val steps = 10
-
-            for (i in 0..steps) {
-                val scaleFactor = 1f - (i * 0.1f)
-                val testSize = currentSize * scaleFactor
-
-                if (testSize < minFontSize) break
-
-                val textStyle = TextStyle(
-                    fontSize = testSize,
-                    fontWeight = if (label.bold) FontWeight.Bold else FontWeight.Normal
-                )
-                val layoutResult = textMeasurer.measure(label.text, textStyle)
-                val width = layoutResult.size.width
-                val height = layoutResult.size.height
-                val left = label.x - width / 2f
-                val top = label.y - height / 2f
-                val rect = Rect(left, top, left + width, top + height)
-
-                var hasCollision = false
-                for (line in linesForCollision) {
-                    if (rectIntersectsLine(rect, line.first, line.second)) {
-                        hasCollision = true
-                        break
-                    }
-                }
-
-                if (!hasCollision) {
-                    finalSize = testSize
-                    isVisible = true
-                    break
-                }
-            }
-            RenderedLabel(label, if (isVisible) finalSize else minFontSize, isVisible)
-        }
-    }
-
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val containerSize = Size(
             with(density) { maxWidth.toPx() },
@@ -938,49 +889,58 @@ fun ZoomableMapCanvas(
                 renderData.endNode?.let {
                     drawCircle(color = endNodeColor, radius = strokeWidth * 3f, center = it)
                 }
+            }
 
-                renderedLabels.forEach { rendered ->
-                    if (rendered.visible) {
-                        val label = rendered.label
-                        val textColor = if (label.color == "#000000") Color.Black else labelColor
+            val fitScale = minOf(
+                containerSize.width / contentSize.width,
+                containerSize.height / contentSize.height
+            ).takeIf { it > 0 } ?: 1f
 
-                        val textStyle = TextStyle(
-                            color = textColor,
-                            fontSize = rendered.fontSize,
-                            fontWeight = if (label.bold) FontWeight.Bold else FontWeight.Normal
-                        )
+            val baseTextSizeScreenPx = with(density) { 4.dp.toPx() }
+            val baseTextSizeWorld = baseTextSizeScreenPx / fitScale
+            val currentTextSizePx = baseTextSizeWorld * zoomState.scale
 
-                        val measuredText = textMeasurer.measure(
-                            text = label.text,
-                            style = textStyle
-                        )
+            renderData.textLabels.forEach { label ->
+                val textColor = if (label.color == "#000000") Color.Black else labelColor
 
-                        val textWidth = measuredText.size.width.toFloat()
-                        val textHeight = measuredText.size.height.toFloat()
-                        val centeredX = label.x - (textWidth / 2f)
-                        val centeredY = label.y - (textHeight / 2f)
+                val textStyle = TextStyle(
+                    color = textColor,
+                    fontSize = with(density) { currentTextSizePx.toSp() },
+                    fontWeight = FontWeight.Medium
+                )
 
-                        if (label.hasBackground) {
-                            val padding = rendered.fontSize.toPx() * 0.3f
-                            val rectLeft = centeredX - padding
-                            val rectTop = centeredY - padding
-                            val rectRight = centeredX + textWidth + padding
-                            val rectBottom = centeredY + textHeight + padding
+                val measuredText = textMeasurer.measure(
+                    text = label.text,
+                    style = textStyle
+                )
 
-                            drawRoundRect(
-                                color = Color.White.copy(alpha = 0.9f),
-                                topLeft = Offset(rectLeft, rectTop),
-                                size = Size(rectRight - rectLeft, rectBottom - rectTop),
-                                cornerRadius = CornerRadius(padding / 2f)
-                            )
-                        }
+                val screenX = label.x * zoomState.scale + zoomState.offsetX
+                val screenY = label.y * zoomState.scale + zoomState.offsetY
 
-                        drawText(
-                            textLayoutResult = measuredText,
-                            topLeft = Offset(centeredX, centeredY)
-                        )
-                    }
+                val textWidth = measuredText.size.width.toFloat()
+                val textHeight = measuredText.size.height.toFloat()
+                val centeredX = screenX - (textWidth / 2f)
+                val centeredY = screenY - (textHeight / 2f)
+
+                if (label.hasBackground) {
+                    val padding = currentTextSizePx * 0.3f
+                    val rectLeft = centeredX - padding
+                    val rectTop = centeredY - padding
+                    val rectRight = centeredX + textWidth + padding
+                    val rectBottom = centeredY + textHeight + padding
+
+                    drawRoundRect(
+                        color = Color.White.copy(alpha = 0.9f),
+                        topLeft = Offset(rectLeft, rectTop),
+                        size = Size(rectRight - rectLeft, rectBottom - rectTop),
+                        cornerRadius = CornerRadius(padding / 2f)
+                    )
                 }
+
+                drawText(
+                    textLayoutResult = measuredText,
+                    topLeft = Offset(centeredX, centeredY)
+                )
             }
         }
 
@@ -1063,5 +1023,111 @@ fun TransitionScreen(currentFlor: Int, targetFloor: Int) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
+    }
+}
+
+@Composable
+fun TransitionToBuildingScreen(
+    fromBuilding: Int,
+    toBuilding: Int
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val lineColor = MaterialTheme.colorScheme.primary
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Откуда
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Default.LocationCity, // или Domain
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "$fromBuilding",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Стрелка / Ходьба
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Canvas(modifier = Modifier.width(40.dp).height(2.dp)) {
+                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                    drawLine(
+                        color = lineColor,
+                        start = Offset(0f, 0f),
+                        end = Offset(size.width, 0f),
+                        pathEffect = pathEffect,
+                        strokeWidth = 4.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp).padding(top = 4.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // Куда
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Default.LocationCity,
+                    contentDescription = null,
+                    modifier = Modifier.size(80.dp), // Чуть больше, так как это цель
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "$toBuilding",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        Spacer(Modifier.height(48.dp))
+
+        Text(
+            text = "Exit Building $fromBuilding",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            text = "Go to Building $toBuilding",
+            style = MaterialTheme.typography.displayMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.height(16.dp))
     }
 }

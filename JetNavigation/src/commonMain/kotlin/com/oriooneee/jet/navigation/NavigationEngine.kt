@@ -5,11 +5,9 @@ import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 import com.oriooneee.jet.navigation.domain.entities.graph.Node
 import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
-import com.oriooneee.jet.navigation.domain.entities.graph.UniversityNavGraph
-import com.oriooneee.jet.navigation.domain.entities.plan.Flor
-import com.oriooneee.jet.navigation.domain.entities.plan.UniversityPlan
+import com.oriooneee.jet.navigation.domain.entities.graph.Flor
+import com.oriooneee.jet.navigation.domain.entities.graph.MasterNavigation
 import kotlinx.serialization.Serializable
-import kotlin.math.abs
 
 @Serializable
 data class TextLabel(
@@ -33,46 +31,11 @@ data class FloorRenderData(
     val textLabels: List<TextLabel>
 )
 
-class NavigationEngine(
-    private val navGraph: UniversityNavGraph,
-    private val plan: UniversityPlan,
-) {
+class NavigationEngine(private val masterNav: MasterNavigation) {
     private val outputWidth = 2000.0
     private val paddingPct = 0.05
-    private val zToFloor = mutableMapOf<Double, Int>()
-
-    init {
-        // ... (init logic remains same)
-        val floorZSamples = mutableMapOf<Int, MutableList<Double>>()
-
-        navGraph.nodes.forEach { node ->
-            if (node.id.contains("_FLOR_")) {
-                val parts = node.id.split("_FLOR_")
-                if (parts.size > 1) {
-                    val floorStr = parts[1].split("_")[0]
-                    val floorNum = floorStr.toIntOrNull()
-                    if (floorNum != null) {
-                        floorZSamples.getOrPut(floorNum) { mutableListOf() }.add(node.z)
-                    }
-                }
-            }
-        }
-
-        val floorMeans = floorZSamples.mapValues { (_, zList) ->
-            zList.average()
-        }
-
-        navGraph.nodes.forEach { node ->
-            if (floorMeans.isNotEmpty()) {
-                val closestFloor = floorMeans.minByOrNull { (_, meanZ) ->
-                    abs(meanZ - node.z)
-                }?.key ?: 1
-                zToFloor[node.z] = closestFloor
-            } else {
-                zToFloor[node.z] = 1
-            }
-        }
-    }
+    private val buildingRegex = Regex("_b_(\\d+)", RegexOption.IGNORE_CASE)
+    private val audRegex = Regex("AUD_(\\d)(\\d)")
 
     fun resolveSelection(
         result: SelectNodeResult,
@@ -84,28 +47,37 @@ class NavigationEngine(
                 if (referenceNode == null) return null
                 findNearestNode(referenceNode) {
                     it.id.contains("WC", ignoreCase = true) &&
-                            (it.id.contains("MAN", ignoreCase = true) || it.id.contains("_M_", ignoreCase = true))
+                            (it.id.contains("MAN", ignoreCase = true) || it.id.contains(
+                                "_M_",
+                                ignoreCase = true
+                            ))
                 }
             }
+
             is SelectNodeResult.NearestWomanWC -> {
                 if (referenceNode == null) return null
                 findNearestNode(referenceNode) {
                     it.id.contains("WC", ignoreCase = true) &&
-                            (it.id.contains("WOMAN", ignoreCase = true) || it.id.contains("_W_", ignoreCase = true))
+                            (it.id.contains("WOMAN", ignoreCase = true) || it.id.contains(
+                                "_W_",
+                                ignoreCase = true
+                            ))
                 }
             }
+
             is SelectNodeResult.NearestMainEntrance -> {
                 if (referenceNode == null) return null
                 findNearestNode(referenceNode) {
-                    // Ищем ENTER или EXIT, но ИСКЛЮЧАЕМ переходы в другие корпуса (TO_BUILDING)
-                    (it.id.contains("ENTER", ignoreCase = true) || it.id.contains("EXIT", ignoreCase = true)) &&
+                    (it.id.contains("ENTER", ignoreCase = true) || it.id.contains(
+                        "EXIT",
+                        ignoreCase = true
+                    )) &&
                             !it.id.contains("TO_BUILDING", ignoreCase = true)
                 }
             }
         }
     }
 
-    // ... (rest of the class: getRoute, findNearestNode, findPath, etc. remains exactly the same as before)
     fun getRoute(
         from: Node,
         to: Node
@@ -121,14 +93,14 @@ class NavigationEngine(
         criteria: (Node) -> Boolean
     ): Node? {
         val adjacency = mutableMapOf<String, MutableList<Pair<String, Double>>>()
-        navGraph.edges.forEach { edge ->
+        masterNav.navGraph.edges.forEach { edge ->
             adjacency.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
         }
 
         val distances = mutableMapOf<String, Double>()
-        val nodesMap = navGraph.nodes.associateBy { it.id }
+        val nodesMap = masterNav.navGraph.nodes.associateBy { it.id }
 
-        navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
+        masterNav.navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
         distances[referenceNode.id] = 0.0
 
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
@@ -157,15 +129,15 @@ class NavigationEngine(
 
     private fun findPath(start: Node, end: Node): List<Node>? {
         val adjacency = mutableMapOf<String, MutableList<Pair<String, Double>>>()
-        navGraph.edges.forEach { edge ->
+        masterNav.navGraph.edges.forEach { edge ->
             adjacency.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
         }
 
         val distances = mutableMapOf<String, Double>()
         val previous = mutableMapOf<String, String>()
-        val nodesMap = navGraph.nodes.associateBy { it.id }
+        val nodesMap = masterNav.navGraph.nodes.associateBy { it.id }
 
-        navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
+        masterNav.navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
         distances[start.id] = 0.0
 
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
@@ -225,87 +197,200 @@ class NavigationEngine(
         for (i in 0 until path.size - 1) {
             val u = path[i]
             val v = path[i + 1]
-            val edge = navGraph.edges.find { it.from == u.id && it.to == v.id }
+            val edge = masterNav.navGraph.edges.find { it.from == u.id && it.to == v.id }
             distance += edge?.weight ?: 0.0
         }
         return distance
     }
 
+    private data class PathSegment(
+        val buildingNum: Int,
+        val floorNum: Int,
+        val nodes: List<Node>
+    )
+
     private fun buildNavigationSteps(fullPath: List<Node>): List<NavigationStep> {
         val steps = mutableListOf<NavigationStep>()
         if (fullPath.isEmpty()) return steps
 
+        println(
+            fullPath.joinToString(" ->\n") {
+                val (b, f) = getNodeLocation(it)
+                "(${it.id}|B$b|F$f)"
+            }
+        )
+
+        val segments = groupPathByLocation(fullPath)
+
+        println("Segments before filtering:")
+        segments.forEachIndexed { index, seg ->
+            println("  Segment $index: B${seg.buildingNum} F${seg.floorNum}, nodes=${seg.nodes.size}, hasNonStairs=${seg.nodes.any { !it.id.contains("STAIRS") }}")
+        }
+
+        val visibleSegments = segments.filter { segment ->
+            segment.nodes.any { !it.id.contains("STAIRS") }
+        }
+
+        println("Segments after filtering: ${visibleSegments.size}")
+
         val globalStartNode = fullPath.first()
         val globalEndNode = fullPath.last()
 
-        val floorGroups = groupPathByFloor(fullPath)
+        println("Available buildings: ${masterNav.buildings.map { "B${it.num}(floors: ${it.flors.map { f -> f.num }})" }}")
 
-        val visibleFloorGroups = floorGroups.filter { (_, nodes) ->
-            nodes.any { !it.id.contains("STAIRS") }
-        }
+        visibleSegments.forEachIndexed { index, segment ->
+            println("Processing segment $index: B${segment.buildingNum} F${segment.floorNum}")
 
-        visibleFloorGroups.forEachIndexed { index, (floorNum, stepNodes) ->
             if (index > 0) {
-                val previousFloor = visibleFloorGroups[index - 1].first
+                val prevSegment = visibleSegments[index - 1]
+
+                if (prevSegment.buildingNum != segment.buildingNum) {
+                    println("  Adding TransitionToBuilding from B${prevSegment.buildingNum} to B${segment.buildingNum}")
+                    steps.add(
+                        NavigationStep.TransitionToBuilding(
+                            form = prevSegment.buildingNum,
+                            to = segment.buildingNum
+                        )
+                    )
+                } else if (prevSegment.floorNum != segment.floorNum) {
+                    println("  Adding TransitionToFlor from F${prevSegment.floorNum} to F${segment.floorNum}")
+                    steps.add(
+                        NavigationStep.TransitionToFlor(
+                            to = segment.floorNum,
+                            from = prevSegment.floorNum
+                        )
+                    )
+                }
+            }
+
+            val building = masterNav.buildings.find { it.num == segment.buildingNum }
+            val flor = building?.flors?.find { it.num == segment.floorNum }
+
+            println("  Looking for B${segment.buildingNum} F${segment.floorNum}: building=$building, flor=$flor")
+
+            if (flor != null) {
+                println("  Adding ByFlor for F${segment.floorNum}")
+                val renderData = generateFloorData(
+                    flor = flor,
+                    stepPath = segment.nodes,
+                    globalStart = globalStartNode,
+                    globalEnd = globalEndNode
+                )
+
+                val focusPoint =
+                    renderData.startNode ?: renderData.routePath.firstOrNull() ?: Offset.Zero
+
                 steps.add(
-                    NavigationStep.TransitionToFlor(
-                        to = floorNum,
-                        from = previousFloor
+                    NavigationStep.ByFlor(
+                        flor = segment.floorNum,
+                        image = renderData,
+                        pointOfInterest = focusPoint,
+                        textLabels = renderData.textLabels
                     )
                 )
+            } else {
+                println("  WARNING: Floor not found! Skipping ByFlor step.")
             }
-
-            val florData = when (floorNum) {
-                1 -> plan.flor1
-                2 -> plan.flor2
-                3 -> plan.flor3
-                4 -> plan.flor4
-                else -> plan.flor1
-            }
-
-            val renderData = generateFloorData(
-                flor = florData,
-                stepPath = stepNodes,
-                globalStart = globalStartNode,
-                globalEnd = globalEndNode
-            )
-
-            val focusPoint = renderData.startNode ?: renderData.routePath.firstOrNull() ?: Offset.Zero
-
-            steps.add(NavigationStep.ByFlor(floorNum, renderData, focusPoint))
         }
 
-        return steps
+        return steps.also {
+            println("Steps: ${it.joinToString(", ") { step ->
+                when(step) {
+                    is NavigationStep.ByFlor -> "ByFlor(F${step.flor})"
+                    is NavigationStep.TransitionToBuilding -> "ToBuilding(B${step.to})"
+                    is NavigationStep.TransitionToFlor -> "ToFlor(F${step.to})"
+                }
+            }}")
+        }
     }
 
-    private fun groupPathByFloor(path: List<Node>): List<Pair<Int, List<Node>>> {
-        val groups = mutableListOf<Pair<Int, List<Node>>>()
-        if (path.isEmpty()) return groups
+    private fun groupPathByLocation(path: List<Node>): List<PathSegment> {
+        val segments = mutableListOf<PathSegment>()
+        if (path.isEmpty()) return segments
 
         var currentNodes = mutableListOf<Node>()
-        var currentFloor = getFloorByZ(path.first().z)
+        var (currentBuilding, currentFloor) = getNodeLocation(path.first())
 
         path.forEach { node ->
-            val nodeFloor = getFloorByZ(node.z)
+            val (nodeBuilding, nodeFloor) = getNodeLocation(node)
 
-            if (nodeFloor != currentFloor) {
+            if (nodeBuilding != currentBuilding || nodeFloor != currentFloor) {
                 if (currentNodes.isNotEmpty()) {
-                    groups.add(currentFloor to ArrayList(currentNodes))
+                    segments.add(
+                        PathSegment(
+                            currentBuilding,
+                            currentFloor,
+                            ArrayList(currentNodes)
+                        )
+                    )
                 }
                 currentNodes = mutableListOf()
+                currentBuilding = nodeBuilding
                 currentFloor = nodeFloor
             }
             currentNodes.add(node)
         }
 
         if (currentNodes.isNotEmpty()) {
-            groups.add(currentFloor to currentNodes)
+            segments.add(PathSegment(currentBuilding, currentFloor, currentNodes))
         }
-        return groups
+        return segments
     }
 
-    private fun getFloorByZ(z: Double): Int {
-        return zToFloor[z] ?: 1
+    /**
+     * Определяет местоположение ноды: корпус и этаж
+     * Приоритеты определения корпуса:
+     * 1. Суффикс _b_X в id (например, NODE_b_2 -> корпус 2)
+     * 2. Regex AUD_XY (X - корпус, Y - этаж)
+     * 3. Fallback эвристики по содержимому id и координатам
+     */
+    private fun getNodeLocation(node: Node): Pair<Int, Int> {
+        var building = 2  // По умолчанию корпус 2
+        var floor = 1     // По умолчанию этаж 1
+
+        // Приоритет 1: Проверяем суффикс _b_X
+        val buildingMatch = buildingRegex.find(node.id)
+        if (buildingMatch != null) {
+            building = buildingMatch.groupValues[1].toIntOrNull() ?: 2
+            println("Node ${node.id}: найден суффикс _b_$building")
+        } else {
+            // Приоритет 2: Проверяем формат AUD_XY
+            val audMatch = audRegex.find(node.id)
+            if (audMatch != null) {
+                building = audMatch.groupValues[1].toInt()
+                floor = audMatch.groupValues[2].toInt()
+                println("Node ${node.id}: найден AUD формат -> B$building F$floor")
+                return building to floor
+            } else {
+                // Приоритет 3: Fallback эвристики
+                if (node.id.contains("_5_", ignoreCase = true) ||
+                    node.id.contains("BUILDING_5", ignoreCase = true) ||
+                    node.z > 1.0) {
+                    building = 5
+                    println("Node ${node.id}: определён как корпус 5 по содержимому/координатам")
+                }
+            }
+        }
+
+        // Определение этажа
+        if (building == 5) {
+            floor = when {
+                node.z > 12.0 -> 4
+                node.z > 9.0 -> 3
+                node.z > 5.0 -> 2
+                else -> 1
+            }
+        } else {
+            // Для других корпусов пытаемся определить этаж по label
+            floor = when {
+                node.label?.contains("поверх 3", ignoreCase = true) == true -> 3
+                node.label?.contains("поверх 2", ignoreCase = true) == true -> 2
+                node.label?.contains("поверх 1", ignoreCase = true) == true -> 1
+                else -> 1
+            }
+        }
+
+        return building to floor
     }
 
     private fun generateFloorData(
@@ -317,11 +402,30 @@ class NavigationEngine(
         val allX = mutableListOf<Double>()
         val allY = mutableListOf<Double>()
 
-        flor.polylines.forEach { p -> p.points.forEach { pt -> allX.add(pt[0]); allY.add(pt[1]) } }
-        flor.lines.forEach { l -> allX.add(l.x1); allX.add(l.x2); allY.add(l.y1); allY.add(l.y2) }
-        flor.texts.forEach { t -> allX.add(t.x); allY.add(t.y) }
+        flor.plan.polylines.forEach { p ->
+            p.points.forEach { pt ->
+                allX.add(pt[0])
+                allY.add(pt[1])
+            }
+        }
+        flor.plan.lines.forEach { l ->
+            allX.add(l.x1)
+            allX.add(l.x2)
+            allY.add(l.y1)
+            allY.add(l.y2)
+        }
+        flor.plan.texts.forEach { t ->
+            allX.add(t.x)
+            allY.add(t.y)
+        }
 
-        if (allX.isEmpty()) return FloorRenderData(1f, 1f, emptyList(), emptyList(), emptyList(), emptyList(), null, null, emptyList())
+        if (allX.isEmpty()) {
+            return FloorRenderData(
+                1f, 1f,
+                emptyList(), emptyList(), emptyList(), emptyList(),
+                null, null, emptyList()
+            )
+        }
 
         val minX = allX.minOrNull() ?: 0.0
         val maxX = allX.maxOrNull() ?: 1.0
@@ -331,7 +435,13 @@ class NavigationEngine(
         val dataW = maxX - minX
         val dataH = maxY - minY
 
-        if (dataW == 0.0 || dataH == 0.0) return FloorRenderData(1f, 1f, emptyList(), emptyList(), emptyList(), emptyList(), null, null, emptyList())
+        if (dataW == 0.0 || dataH == 0.0) {
+            return FloorRenderData(
+                1f, 1f,
+                emptyList(), emptyList(), emptyList(), emptyList(),
+                null, null, emptyList()
+            )
+        }
 
         val drawWidth = outputWidth * (1 - paddingPct * 2)
         val scale = drawWidth / dataW
@@ -344,7 +454,7 @@ class NavigationEngine(
         val polygons = mutableListOf<List<Offset>>()
         val polylines = mutableListOf<List<Offset>>()
 
-        flor.polylines.forEach { poly ->
+        flor.plan.polylines.forEach { poly ->
             val points = poly.points.map { Offset(tx(it[0]), ty(it[1])) }
             if (poly.closed) {
                 polygons.add(points)
@@ -353,7 +463,7 @@ class NavigationEngine(
             }
         }
 
-        val singleLines = flor.lines.map { l ->
+        val singleLines = flor.plan.lines.map { l ->
             Pair(Offset(tx(l.x1), ty(l.y1)), Offset(tx(l.x2), ty(l.y2)))
         }
 
@@ -382,7 +492,7 @@ class NavigationEngine(
 
         val textLabels = mutableListOf<TextLabel>()
 
-        flor.texts.forEach { txt ->
+        flor.plan.texts.forEach { txt ->
             var clean = txt.text
             val sbClean = StringBuilder()
             for (char in clean) {
