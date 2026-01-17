@@ -61,11 +61,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             is SelectNodeResult.NearestMainEntrance -> {
                 if (referenceNode == null) return null
                 findNearestNode(referenceNode) {
-                    (it.id.contains("ENTER", ignoreCase = true) || it.id.contains(
-                        "EXIT",
-                        ignoreCase = true
-                    )) &&
-                            !it.id.contains("TO_BUILDING", ignoreCase = true)
+                    it.type.contains(NodeType.MAIN_ENTRANCE)
                 }
             }
         }
@@ -206,39 +202,22 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         val steps = mutableListOf<NavigationStep>()
         if (fullPath.isEmpty()) return steps
 
-        println(
-            fullPath.joinToString(" ->\n") {
-                val (b, f) = getNodeLocation(it)
-                "(${it.id}|B$b|F$f)"
-            }
-        )
-
         val segments = groupPathByLocation(fullPath)
-
-        println("Segments before filtering:")
-        segments.forEachIndexed { index, seg ->
-            println("  Segment $index: B${seg.buildingNum} F${seg.floorNum}, nodes=${seg.nodes.size}, hasNonStairs=${seg.nodes.any { !it.id.contains("STAIRS") }}")
-        }
 
         val visibleSegments = segments.filter { segment ->
             segment.nodes.any { !it.id.contains("STAIRS") }
         }
 
-        println("Segments after filtering: ${visibleSegments.size}")
-
         val globalStartNode = fullPath.first()
         val globalEndNode = fullPath.last()
 
-        println("Available buildings: ${masterNav.buildings.map { "B${it.num}(floors: ${it.flors.map { f -> f.num }})" }}")
 
         visibleSegments.forEachIndexed { index, segment ->
-            println("Processing segment $index: B${segment.buildingNum} F${segment.floorNum}")
 
             if (index > 0) {
                 val prevSegment = visibleSegments[index - 1]
 
                 if (prevSegment.buildingNum != segment.buildingNum) {
-                    println("  Adding TransitionToBuilding from B${prevSegment.buildingNum} to B${segment.buildingNum}")
                     steps.add(
                         NavigationStep.TransitionToBuilding(
                             form = prevSegment.buildingNum,
@@ -246,7 +225,6 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                         )
                     )
                 } else if (prevSegment.floorNum != segment.floorNum) {
-                    println("  Adding TransitionToFlor from F${prevSegment.floorNum} to F${segment.floorNum}")
                     steps.add(
                         NavigationStep.TransitionToFlor(
                             to = segment.floorNum,
@@ -259,10 +237,8 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             val building = masterNav.buildings.find { it.num == segment.buildingNum }
             val flor = building?.flors?.find { it.num == segment.floorNum }
 
-            println("  Looking for B${segment.buildingNum} F${segment.floorNum}: building=$building, flor=$flor")
 
             if (flor != null) {
-                println("  Adding ByFlor for F${segment.floorNum}")
                 val renderData = generateFloorData(
                     flor = flor,
                     stepPath = segment.nodes,
@@ -286,15 +262,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             }
         }
 
-        return steps.also {
-            println("Steps: ${it.joinToString(", ") { step ->
-                when(step) {
-                    is NavigationStep.ByFlor -> "ByFlor(F${step.flor})"
-                    is NavigationStep.TransitionToBuilding -> "ToBuilding(B${step.to})"
-                    is NavigationStep.TransitionToFlor -> "ToFlor(F${step.to})"
-                }
-            }}")
-        }
+        return steps
     }
 
     private fun groupPathByLocation(path: List<Node>): List<PathSegment> {
@@ -345,14 +313,12 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         val buildingMatch = buildingRegex.find(node.id)
         if (buildingMatch != null) {
             building = buildingMatch.groupValues[1].toIntOrNull() ?: 2
-            println("Node ${node.id}: найден суффикс _b_$building")
         } else {
             // Приоритет 2: Проверяем формат AUD_XY
             val audMatch = audRegex.find(node.id)
             if (audMatch != null) {
                 building = audMatch.groupValues[1].toInt()
                 floor = audMatch.groupValues[2].toInt()
-                println("Node ${node.id}: найден AUD формат -> B$building F$floor")
                 return building to floor
             } else {
                 // Приоритет 3: Fallback эвристики
@@ -360,7 +326,6 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                     node.id.contains("BUILDING_5", ignoreCase = true) ||
                     node.z > 1.0) {
                     building = 5
-                    println("Node ${node.id}: определён как корпус 5 по содержимому/координатам")
                 }
             }
         }

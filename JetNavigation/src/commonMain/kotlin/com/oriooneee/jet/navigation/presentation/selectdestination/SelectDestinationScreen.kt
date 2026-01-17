@@ -74,8 +74,6 @@ import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
 import com.oriooneee.jet.navigation.presentation.KEY_SELECTED_END_NODE
 import com.oriooneee.jet.navigation.presentation.KEY_SELECTED_START_NODE
 import com.oriooneee.jet.navigation.presentation.navigation.LocalNavController
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -283,15 +281,6 @@ fun SelectDestinationScreen(
                                     }
                                 },
                                 label = { Text("Building $building") },
-                                trailingIcon = if (selectedBuilding == building) {
-                                    {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                } else null,
                                 colors = InputChipDefaults.inputChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -315,15 +304,6 @@ fun SelectDestinationScreen(
                                     selectedFloor = if (selectedFloor == floor) null else floor
                                 },
                                 label = { Text("Floor $floor") },
-                                trailingIcon = if (selectedFloor == floor) {
-                                    {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                } else null,
                                 colors = InputChipDefaults.inputChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,

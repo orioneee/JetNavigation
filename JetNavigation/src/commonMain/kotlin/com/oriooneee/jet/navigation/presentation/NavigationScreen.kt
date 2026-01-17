@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -161,7 +162,7 @@ class ZoomState(private val minScale: Float, private val maxScale: Float) {
 
     fun zoomIn() = zoomBy(1.5f)
     fun zoomOut() = zoomBy(0.66f)
-    private fun zoomBy(factor: Float) {
+    fun zoomBy(factor: Float) {
         val center = Offset(containerSize.width / 2, containerSize.height / 2)
         val newScale = (scale * factor).coerceIn(minScale, maxScale)
         val actualZoomFactor = newScale / scale
@@ -778,6 +779,79 @@ fun ZoomableMapCanvas(
     val contentSize = remember(renderData) { Size(renderData.width, renderData.height) }
     val density = LocalDensity.current
 
+    val renderedLabels = remember(renderData, density) {
+        val linesForCollision = mutableListOf<Pair<Offset, Offset>>()
+        renderData.polylines.forEach { poly ->
+            for (i in 0 until poly.size - 1) {
+                linesForCollision.add(poly[i] to poly[i + 1])
+            }
+        }
+        renderData.polygons.forEach { poly ->
+            for (i in 0 until poly.size - 1) {
+                linesForCollision.add(poly[i] to poly[i + 1])
+            }
+            if (poly.isNotEmpty()) linesForCollision.add(poly.last() to poly.first())
+        }
+        linesForCollision.addAll(renderData.singleLines)
+
+        val labelMaxSizes = renderData.textLabels.map { label ->
+            val maxFontSize = 40.sp
+            val minCheckSize = 2.sp
+            var bestFitSize = 0.sp
+            val steps = 20
+
+            for (i in 0..steps) {
+                val scaleFactor = 1f - (i * (1f / steps))
+                val testSize = maxFontSize * scaleFactor
+
+                if (testSize.value < minCheckSize.value) break
+
+                val textStyle = TextStyle(
+                    fontSize = testSize,
+                    fontWeight = if (label.bold) FontWeight.Bold else FontWeight.Normal
+                )
+                val layoutResult = textMeasurer.measure(label.text, textStyle)
+                val width = layoutResult.size.width
+                val height = layoutResult.size.height
+                val left = label.x - width / 2f
+                val top = label.y - height / 2f
+                val rect = Rect(left, top, left + width, top + height)
+
+                var hasCollision = false
+                for (line in linesForCollision) {
+                    if (rectIntersectsLine(rect, line.first, line.second)) {
+                        hasCollision = true
+                        break
+                    }
+                }
+
+                if (!hasCollision) {
+                    bestFitSize = testSize
+                    break
+                }
+            }
+            label to bestFitSize
+        }
+
+        val minReadableSizeVal = 3f
+        val goodSizes = labelMaxSizes.sortedBy {
+            it.second.value
+        }.also {
+            println(it.joinToString("\n") { it.toString() })
+        }.map { it.second.value.coerceAtLeast(minReadableSizeVal) }
+        val standardSizeVal = goodSizes.min().toFloat()
+
+        labelMaxSizes.map { (label, maxFitSize) ->
+            val constrainedSize = if (maxFitSize.value < minReadableSizeVal) {
+                minReadableSizeVal
+            } else {
+                minOf(maxFitSize.value, standardSizeVal)
+            }
+
+            RenderedLabel(label, constrainedSize.sp, true)
+        }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val containerSize = Size(
             with(density) { maxWidth.toPx() },
@@ -797,6 +871,11 @@ fun ZoomableMapCanvas(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            zoomState.zoomBy(3f)
+                        }
+                    )
                     detectTransformGestures { centroid, pan, zoom, _ ->
                         zoomState.onGesture(centroid, pan, zoom)
                     }
@@ -806,7 +885,7 @@ fun ZoomableMapCanvas(
                 translate(left = zoomState.offsetX, top = zoomState.offsetY)
                 scale(scaleX = zoomState.scale, scaleY = zoomState.scale, pivot = Offset.Zero)
             }) {
-                val strokeWidth = maxOf(1f, contentSize.height * 0.001f)
+                val strokeWidth = maxOf(1f, contentSize.height * 0.001f) / 2
 
                 renderData.polygons.forEach { points ->
                     if (points.isNotEmpty()) {
@@ -876,7 +955,7 @@ fun ZoomableMapCanvas(
                         path = routePath,
                         color = routeColor.copy(alpha = 0.8f),
                         style = Stroke(
-                            width = strokeWidth * 2f,
+                            width = strokeWidth * 4f,
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round
                         )
@@ -889,58 +968,49 @@ fun ZoomableMapCanvas(
                 renderData.endNode?.let {
                     drawCircle(color = endNodeColor, radius = strokeWidth * 3f, center = it)
                 }
-            }
 
-            val fitScale = minOf(
-                containerSize.width / contentSize.width,
-                containerSize.height / contentSize.height
-            ).takeIf { it > 0 } ?: 1f
+                renderedLabels.forEach { rendered ->
+                    if (rendered.visible) {
+                        val label = rendered.label
+                        val textColor = if (label.color == "#000000") Color.Black else labelColor
 
-            val baseTextSizeScreenPx = with(density) { 2.dp.toPx() }
-            val baseTextSizeWorld = baseTextSizeScreenPx / fitScale
-            val currentTextSizePx = baseTextSizeWorld * zoomState.scale
+                        val textStyle = TextStyle(
+                            color = textColor,
+                            fontSize = rendered.fontSize,
+                            fontWeight = if (label.bold) FontWeight.Bold else FontWeight.Normal
+                        )
 
-            renderData.textLabels.forEach { label ->
-                val textColor = if (label.color == "#000000") Color.Black else labelColor
+                        val measuredText = textMeasurer.measure(
+                            text = label.text,
+                            style = textStyle
+                        )
 
-                val textStyle = TextStyle(
-                    color = textColor,
-                    fontSize = with(density) { currentTextSizePx.toSp() },
-                    fontWeight = FontWeight.Medium
-                )
+                        val textWidth = measuredText.size.width.toFloat()
+                        val textHeight = measuredText.size.height.toFloat()
+                        val centeredX = label.x - (textWidth / 2f)
+                        val centeredY = label.y - (textHeight / 2f)
 
-                val measuredText = textMeasurer.measure(
-                    text = label.text,
-                    style = textStyle
-                )
+                        if (label.hasBackground) {
+                            val padding = rendered.fontSize.toPx() * 0.3f
+                            val rectLeft = centeredX - padding
+                            val rectTop = centeredY - padding
+                            val rectRight = centeredX + textWidth + padding
+                            val rectBottom = centeredY + textHeight + padding
 
-                val screenX = label.x * zoomState.scale + zoomState.offsetX
-                val screenY = label.y * zoomState.scale + zoomState.offsetY
+                            drawRoundRect(
+                                color = Color.White.copy(alpha = 0.9f),
+                                topLeft = Offset(rectLeft, rectTop),
+                                size = Size(rectRight - rectLeft, rectBottom - rectTop),
+                                cornerRadius = CornerRadius(padding / 2f)
+                            )
+                        }
 
-                val textWidth = measuredText.size.width.toFloat()
-                val textHeight = measuredText.size.height.toFloat()
-                val centeredX = screenX - (textWidth / 2f)
-                val centeredY = screenY - (textHeight / 2f)
-
-                if (label.hasBackground) {
-                    val padding = currentTextSizePx * 0.3f
-                    val rectLeft = centeredX - padding
-                    val rectTop = centeredY - padding
-                    val rectRight = centeredX + textWidth + padding
-                    val rectBottom = centeredY + textHeight + padding
-
-                    drawRoundRect(
-                        color = Color.White.copy(alpha = 0.9f),
-                        topLeft = Offset(rectLeft, rectTop),
-                        size = Size(rectRight - rectLeft, rectBottom - rectTop),
-                        cornerRadius = CornerRadius(padding / 2f)
-                    )
+                        drawText(
+                            textLayoutResult = measuredText,
+                            topLeft = Offset(centeredX, centeredY)
+                        )
+                    }
                 }
-
-                drawText(
-                    textLayoutResult = measuredText,
-                    topLeft = Offset(centeredX, centeredY)
-                )
             }
         }
 
@@ -965,6 +1035,7 @@ fun ZoomableMapCanvas(
         }
     }
 }
+
 
 private fun rectIntersectsLine(rect: Rect, p1: Offset, p2: Offset): Boolean {
     if (rect.contains(p1) || rect.contains(p2)) return true
@@ -1113,7 +1184,7 @@ fun TransitionToBuildingScreen(
         Spacer(Modifier.height(48.dp))
 
         Text(
-            text = "Exit Building $fromBuilding",
+            text = "Now you exiting building $fromBuilding",
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1121,7 +1192,7 @@ fun TransitionToBuildingScreen(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "Go to Building $toBuilding",
+            text = "and entering building $toBuilding",
             style = MaterialTheme.typography.displayMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
