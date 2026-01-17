@@ -871,14 +871,16 @@ fun ZoomableMapCanvas(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
+                    detectTransformGestures { centroid, pan, zoom, _ ->
+                        zoomState.onGesture(centroid, pan, zoom)
+                    }
+                }
+                .pointerInput(Unit) {
                     detectTapGestures(
                         onDoubleTap = {
                             zoomState.zoomBy(3f)
                         }
                     )
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        zoomState.onGesture(centroid, pan, zoom)
-                    }
                 }
         ) {
             withTransform({
