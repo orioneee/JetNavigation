@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Class
 import androidx.compose.material.icons.outlined.DirectionsWalk
 import androidx.compose.material.icons.outlined.DoorFront
+import androidx.compose.material.icons.outlined.ExitToApp
 import androidx.compose.material.icons.outlined.Man
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Star
@@ -437,7 +438,7 @@ fun QuickActionButton(
 fun NodeListItem(node: Node, onClick: () -> Unit) {
     val (icon, color) = when {
         node.type.contains(NodeType.POINT_OF_INTEREST) -> Icons.Outlined.Star to MaterialTheme.colorScheme.primary
-        node.type.contains(NodeType.MAIN_ENTRANCE) -> Icons.Outlined.DoorFront to MaterialTheme.colorScheme.primary
+        node.type.contains(NodeType.MAIN_ENTRANCE) -> Icons.Outlined.ExitToApp to Color(0xFF4CAF50)
         node.type.containsAll(
             listOf(NodeType.WC_WOMAN, NodeType.WC_MAN)
         ) -> Icons.Outlined.Wc to MaterialTheme.colorScheme.tertiary

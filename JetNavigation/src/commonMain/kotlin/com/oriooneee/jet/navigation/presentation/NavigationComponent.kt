@@ -3,6 +3,7 @@ package com.oriooneee.jet.navigation.presentation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -26,8 +27,9 @@ import androidx.compose.ui.unit.dp
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 
 @Composable
-fun FloorBadge(
+fun FloorAndBuildingBadge(
     floorNumber: Int,
+    buildingNumber: Int,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -35,12 +37,20 @@ fun FloorBadge(
         shape = RoundedCornerShape(16.dp),
         modifier = modifier
     ) {
-        Text(
-            text = "Flor $floorNumber",
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
+        Row {
+            Text(
+                text = "Building $buildingNumber ",
+                modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                text = "Floor $floorNumber",
+                modifier = Modifier.padding(end = 8.dp, top = 8.dp, bottom = 8.dp),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }
 

@@ -1,16 +1,22 @@
 package com.oriooneee.jet.navigation
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DoorSliding
+import androidx.compose.material.icons.outlined.ExitToApp
+import androidx.compose.material.icons.outlined.Man
+import androidx.compose.material.icons.outlined.Wc
+import androidx.compose.material.icons.outlined.Woman
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
-import com.oriooneee.jet.navigation.domain.entities.graph.Node
-import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
 import com.oriooneee.jet.navigation.domain.entities.graph.Flor
 import com.oriooneee.jet.navigation.domain.entities.graph.MasterNavigation
+import com.oriooneee.jet.navigation.domain.entities.graph.Node
 import com.oriooneee.jet.navigation.domain.entities.graph.NodeType
-import kotlinx.serialization.Serializable
+import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
 
-@Serializable
 data class TextLabel(
     val text: String,
     val x: Float,
@@ -18,6 +24,13 @@ data class TextLabel(
     val color: String = "#000000",
     val bold: Boolean = false,
     val hasBackground: Boolean = false
+)
+
+data class IconLabel(
+    val icon: ImageVector,
+    val x: Float,
+    val y: Float,
+    val tint: Color,
 )
 
 data class FloorRenderData(
@@ -29,37 +42,23 @@ data class FloorRenderData(
     val routePath: List<Offset>,
     val startNode: Offset?,
     val endNode: Offset?,
-    val textLabels: List<TextLabel>
+    val textLabels: List<TextLabel>,
+    val icons: List<IconLabel>,
 )
 
 class NavigationEngine(private val masterNav: MasterNavigation) {
     private val outputWidth = 2000.0
     private val paddingPct = 0.05
-    private val buildingRegex = Regex("_b_(\\d+)", RegexOption.IGNORE_CASE)
-    private val audRegex = Regex("AUD_(\\d)(\\d)")
-
-    // Кэшируем граф смежности при создании
     private val adjacency: Map<String, List<Pair<String, Double>>> = buildAdjacencyMap()
     private val nodesMap: Map<String, Node> = masterNav.navGraph.nodes.associateBy { it.id }
 
     private fun buildAdjacencyMap(): Map<String, MutableList<Pair<String, Double>>> {
         val adj = mutableMapOf<String, MutableList<Pair<String, Double>>>()
 
-        println("=== Построение графа смежности ===")
-        println("Всего рёбер: ${masterNav.navGraph.edges.size}")
-
         masterNav.navGraph.edges.forEach { edge ->
-            // Прямое направление
             adj.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
-            // Обратное направление (двустороннее ребро)
             adj.getOrPut(edge.to) { mutableListOf() }.add(edge.from to edge.weight)
         }
-
-        println("Узлов с рёбрами: ${adj.size}")
-        adj.forEach { (nodeId, edges) ->
-            println("  $nodeId -> ${edges.size} связей")
-        }
-        println("=================================\n")
 
         return adj
     }
@@ -97,37 +96,13 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         from: Node,
         to: Node
     ): NavigationDirection {
-        println("\n╔═══════════════════════════════════════════════════════════════")
-        println("║ ПОИСК МАРШРУТА")
-        println("╠═══════════════════════════════════════════════════════════════")
-        println("║ От: ${from.id} (${from.label ?: "без метки"})")
-        println("║     Координаты: (${from.x}, ${from.y})")
-        println("║     Здание: ${from.buildNum}, Этаж: ${from.floorNum}")
-        println("║     Типы: ${from.type}")
-        println("║")
-        println("║ До: ${to.id} (${to.label ?: "без метки"})")
-        println("║     Координаты: (${to.x}, ${to.y})")
-        println("║     Здание: ${to.buildNum}, Этаж: ${to.floorNum}")
-        println("║     Типы: ${to.type}")
-        println("╚═══════════════════════════════════════════════════════════════\n")
-
         val path = findPath(from, to)
 
         if (path == null) {
-            println("❌ МАРШРУТ НЕ НАЙДЕН!\n")
             return NavigationDirection(emptyList(), 0.0)
         }
 
         val totalDistance = calculateTotalDistance(path)
-        println("\n✅ МАРШРУТ НАЙДЕН!")
-        println("   Длина пути: ${path.size} узлов")
-        println("   Общее расстояние: ${totalDistance} м")
-        println("   Узлы маршрута:")
-        path.forEachIndexed { index, node ->
-            println("     $index. ${node.id} (${node.label ?: "?"}) - Здание ${node.buildNum}, Этаж ${node.floorNum}")
-        }
-        println()
-
         val steps = buildNavigationSteps(path)
         return NavigationDirection(steps, totalDistance)
     }
@@ -136,9 +111,6 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         referenceNode: Node,
         criteria: (Node) -> Boolean
     ): Node? {
-        println("\n--- Поиск ближайшего узла ---")
-        println("От узла: ${referenceNode.id}")
-
         val distances = mutableMapOf<String, Double>()
         masterNav.navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
         distances[referenceNode.id] = 0.0
@@ -146,17 +118,13 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
         pq.offer(referenceNode.id to 0.0)
 
-        var nodesChecked = 0
         while (pq.isNotEmpty()) {
             val (u, d) = pq.poll() ?: break
-            nodesChecked++
 
             if (d > (distances[u] ?: Double.MAX_VALUE)) continue
 
             val currentNode = nodesMap[u]
             if (currentNode != null && u != referenceNode.id && criteria(currentNode)) {
-                println("Найден узел: ${currentNode.id} на расстоянии ${d} м")
-                println("Проверено узлов: $nodesChecked\n")
                 return currentNode
             }
 
@@ -168,14 +136,10 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                 }
             }
         }
-
-        println("Узел не найден! Проверено узлов: $nodesChecked\n")
         return null
     }
 
     private fun findPath(start: Node, end: Node): List<Node>? {
-        println("┌─ Начало алгоритма Дейкстры ─┐")
-
         val distances = mutableMapOf<String, Double>()
         val previous = mutableMapOf<String, String>()
 
@@ -185,52 +149,35 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
         pq.offer(start.id to 0.0)
 
-        var iterations = 0
-        var nodesVisited = 0
         val visited = mutableSetOf<String>()
 
         while (pq.isNotEmpty()) {
-            iterations++
             val (u, d) = pq.poll() ?: break
 
             if (u in visited) continue
             visited.add(u)
-            nodesVisited++
-
-            if (iterations <= 10 || iterations % 50 == 0) {
-                println("  Итерация $iterations: узел $u, dist=${d}")
-            }
 
             if (d > (distances[u] ?: Double.MAX_VALUE)) continue
 
             if (u == end.id) {
-                println("└─ Целевой узел достигнут! ─┘")
-                println("   Итераций: $iterations")
-                println("   Посещено узлов: $nodesVisited")
                 break
             }
 
-            val neighbors = adjacency[u]
-            if (neighbors == null || neighbors.isEmpty()) {
-                if (iterations <= 10) {
-                    println("    ⚠️  У узла $u нет соседей!")
-                }
-                continue
-            }
+            val neighbors = adjacency[u] ?: continue
 
             neighbors.forEach { (v, weight) ->
                 val node = nodesMap[v]
                 if (node != null) {
-                    val shouldSkip = if(node.type.contains(NodeType.AUDITORIUM)){
+                    val shouldSkip = if (node.type.contains(NodeType.AUDITORIUM)) {
                         val audNum = node.label?.filter { it.isDigit() }?.toIntOrNull()
                         val startAudNum = start.label?.filter { it.isDigit() }?.toIntOrNull()
                         val endAudNum = end.label?.filter { it.isDigit() }?.toIntOrNull()
-                        if(audNum == null || startAudNum == null || endAudNum == null){
+                        if (audNum == null || startAudNum == null || endAudNum == null) {
                             false
-                        } else{
+                        } else {
                             audNum != startAudNum && audNum != endAudNum
                         }
-                    } else{
+                    } else {
                         false
                     }
 
@@ -246,40 +193,19 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             }
         }
 
-        println("└─ Завершено ─┘")
-        println("   Всего итераций: $iterations")
-        println("   Посещено узлов: $nodesVisited")
-
         if (distances[end.id] == Double.MAX_VALUE) {
-            println("\n❌ Путь не найден!")
-            println("   Конечный узел недостижим из начального")
-            println("   Расстояние до конечного узла: ${distances[end.id]}")
-
-            // Диагностика
-            println("\n🔍 Диагностика:")
-            println("   Начальный узел ${start.id} имеет ${adjacency[start.id]?.size ?: 0} соседей")
-            println("   Конечный узел ${end.id} имеет ${adjacency[end.id]?.size ?: 0} соседей")
-
             return null
         }
 
-        // Восстановление пути
         val path = mutableListOf<Node>()
         var current: String? = end.id
-        var pathLength = 0
 
         while (current != null) {
             nodesMap[current]?.let { path.add(it) }
-            pathLength++
             current = previous[current]
             if (current == start.id) {
                 nodesMap[start.id]?.let { path.add(it) }
-                pathLength++
                 break
-            }
-            if (pathLength > 10000) {
-                println("⚠️  Обнаружен цикл при восстановлении пути!")
-                return null
             }
         }
 
@@ -348,6 +274,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             if (flor != null) {
                 val renderData = generateFloorData(
                     flor = flor,
+                    buildingId = segment.buildingNum,
                     stepPath = segment.nodes,
                     globalStart = globalStartNode,
                     globalEnd = globalEndNode
@@ -359,13 +286,12 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                 steps.add(
                     NavigationStep.ByFlor(
                         flor = segment.floorNum,
+                        building = segment.buildingNum,
                         image = renderData,
                         pointOfInterest = focusPoint,
                         textLabels = renderData.textLabels
                     )
                 )
-            } else {
-                println("  WARNING: Floor not found! Skipping ByFlor step.")
             }
         }
 
@@ -407,6 +333,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
     private fun generateFloorData(
         flor: Flor,
+        buildingId: Int,
         stepPath: List<Node>,
         globalStart: Node,
         globalEnd: Node
@@ -433,9 +360,16 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
         if (allX.isEmpty()) {
             return FloorRenderData(
-                1f, 1f,
-                emptyList(), emptyList(), emptyList(), emptyList(),
-                null, null, emptyList()
+                width = 1f,
+                height = 1f,
+                polygons = emptyList(),
+                polylines = emptyList(),
+                singleLines = emptyList(),
+                routePath = emptyList(),
+                startNode = null,
+                endNode = null,
+                textLabels = emptyList(),
+                icons = emptyList()
             )
         }
 
@@ -449,9 +383,16 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
         if (dataW == 0.0 || dataH == 0.0) {
             return FloorRenderData(
-                1f, 1f,
-                emptyList(), emptyList(), emptyList(), emptyList(),
-                null, null, emptyList()
+                width = 1f,
+                height = 1f,
+                polygons = emptyList(),
+                polylines = emptyList(),
+                singleLines = emptyList(),
+                routePath = emptyList(),
+                startNode = null,
+                endNode = null,
+                textLabels = emptyList(),
+                icons = emptyList()
             )
         }
 
@@ -502,6 +443,49 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             }
         }
 
+        val icons = mutableListOf<IconLabel>()
+        val floorNodes = masterNav.navGraph.nodes.filter {
+            it.buildNum == buildingId && it.floorNum == flor.num
+        }
+
+        floorNodes.forEach { node ->
+            var icon: ImageVector? = null
+            var tint: Color = Color.Black
+
+            when {
+                node.type.containsAll(listOf(NodeType.WC_WOMAN, NodeType.WC_MAN)) -> {
+                    icon = Icons.Outlined.Wc
+                    tint = Color(0xFF9B27AF)
+                }
+
+                node.type.contains(NodeType.WC_MAN) -> {
+                    icon = Icons.Outlined.Man
+                    tint = Color(0xFF4A90E2)
+                }
+
+                node.type.contains(NodeType.WC_WOMAN) -> {
+                    icon = Icons.Outlined.Woman
+                    tint = Color(0xFFE91E63)
+                }
+
+                node.type.contains(NodeType.MAIN_ENTRANCE) -> {
+                    icon = Icons.Outlined.ExitToApp
+                    tint = Color(0xFF4CAF50)
+                }
+            }
+
+            if (icon != null) {
+                icons.add(
+                    IconLabel(
+                        icon = icon,
+                        x = tx(node.x),
+                        y = ty(node.y),
+                        tint = tint
+                    )
+                )
+            }
+        }
+
         val textLabels = mutableListOf<TextLabel>()
 
         flor.plan.texts.forEach { txt ->
@@ -516,7 +500,11 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                 .replace(">", "&gt;")
                 .trim()
 
-            if (clean.isNotEmpty()) {
+            val isWcText = clean.contains("wc", ignoreCase = true) ||
+                    clean.equals("м", ignoreCase = true) ||
+                    clean.equals("ж", ignoreCase = true)
+
+            if (clean.isNotEmpty() && !isWcText) {
                 val cx = tx(txt.x)
                 val cy = ty(txt.y)
 
@@ -540,7 +528,8 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             routePath = routePoints,
             startNode = startNodeOffset,
             endNode = endNodeOffset,
-            textLabels = textLabels
+            textLabels = textLabels,
+            icons = icons
         )
     }
 

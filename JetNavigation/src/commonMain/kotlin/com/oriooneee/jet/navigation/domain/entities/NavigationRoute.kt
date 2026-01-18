@@ -6,6 +6,7 @@ import com.oriooneee.jet.navigation.TextLabel
 
 sealed class NavigationStep {
     data class ByFlor(
+        val building: Int,
         val flor: Int,
         val image: FloorRenderData,
         val pointOfInterest: Offset = Offset.Zero,
