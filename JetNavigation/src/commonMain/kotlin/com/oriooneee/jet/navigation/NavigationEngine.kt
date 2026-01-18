@@ -38,6 +38,32 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
     private val buildingRegex = Regex("_b_(\\d+)", RegexOption.IGNORE_CASE)
     private val audRegex = Regex("AUD_(\\d)(\\d)")
 
+    // Кэшируем граф смежности при создании
+    private val adjacency: Map<String, List<Pair<String, Double>>> = buildAdjacencyMap()
+    private val nodesMap: Map<String, Node> = masterNav.navGraph.nodes.associateBy { it.id }
+
+    private fun buildAdjacencyMap(): Map<String, MutableList<Pair<String, Double>>> {
+        val adj = mutableMapOf<String, MutableList<Pair<String, Double>>>()
+
+        println("=== Построение графа смежности ===")
+        println("Всего рёбер: ${masterNav.navGraph.edges.size}")
+
+        masterNav.navGraph.edges.forEach { edge ->
+            // Прямое направление
+            adj.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
+            // Обратное направление (двустороннее ребро)
+            adj.getOrPut(edge.to) { mutableListOf() }.add(edge.from to edge.weight)
+        }
+
+        println("Узлов с рёбрами: ${adj.size}")
+        adj.forEach { (nodeId, edges) ->
+            println("  $nodeId -> ${edges.size} связей")
+        }
+        println("=================================\n")
+
+        return adj
+    }
+
     fun resolveSelection(
         result: SelectNodeResult,
         referenceNode: Node?
@@ -71,8 +97,37 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         from: Node,
         to: Node
     ): NavigationDirection {
-        val path = findPath(from, to) ?: return NavigationDirection(emptyList(), 0.0)
+        println("\n╔═══════════════════════════════════════════════════════════════")
+        println("║ ПОИСК МАРШРУТА")
+        println("╠═══════════════════════════════════════════════════════════════")
+        println("║ От: ${from.id} (${from.label ?: "без метки"})")
+        println("║     Координаты: (${from.x}, ${from.y})")
+        println("║     Здание: ${from.buildNum}, Этаж: ${from.floorNum}")
+        println("║     Типы: ${from.type}")
+        println("║")
+        println("║ До: ${to.id} (${to.label ?: "без метки"})")
+        println("║     Координаты: (${to.x}, ${to.y})")
+        println("║     Здание: ${to.buildNum}, Этаж: ${to.floorNum}")
+        println("║     Типы: ${to.type}")
+        println("╚═══════════════════════════════════════════════════════════════\n")
+
+        val path = findPath(from, to)
+
+        if (path == null) {
+            println("❌ МАРШРУТ НЕ НАЙДЕН!\n")
+            return NavigationDirection(emptyList(), 0.0)
+        }
+
         val totalDistance = calculateTotalDistance(path)
+        println("\n✅ МАРШРУТ НАЙДЕН!")
+        println("   Длина пути: ${path.size} узлов")
+        println("   Общее расстояние: ${totalDistance} м")
+        println("   Узлы маршрута:")
+        path.forEachIndexed { index, node ->
+            println("     $index. ${node.id} (${node.label ?: "?"}) - Здание ${node.buildNum}, Этаж ${node.floorNum}")
+        }
+        println()
+
         val steps = buildNavigationSteps(path)
         return NavigationDirection(steps, totalDistance)
     }
@@ -81,27 +136,27 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         referenceNode: Node,
         criteria: (Node) -> Boolean
     ): Node? {
-        val adjacency = mutableMapOf<String, MutableList<Pair<String, Double>>>()
-        masterNav.navGraph.edges.forEach { edge ->
-            adjacency.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
-        }
+        println("\n--- Поиск ближайшего узла ---")
+        println("От узла: ${referenceNode.id}")
 
         val distances = mutableMapOf<String, Double>()
-        val nodesMap = masterNav.navGraph.nodes.associateBy { it.id }
-
         masterNav.navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
         distances[referenceNode.id] = 0.0
 
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
         pq.offer(referenceNode.id to 0.0)
 
+        var nodesChecked = 0
         while (pq.isNotEmpty()) {
             val (u, d) = pq.poll() ?: break
+            nodesChecked++
 
             if (d > (distances[u] ?: Double.MAX_VALUE)) continue
 
             val currentNode = nodesMap[u]
             if (currentNode != null && u != referenceNode.id && criteria(currentNode)) {
+                println("Найден узел: ${currentNode.id} на расстоянии ${d} м")
+                println("Проверено узлов: $nodesChecked\n")
                 return currentNode
             }
 
@@ -113,18 +168,16 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                 }
             }
         }
+
+        println("Узел не найден! Проверено узлов: $nodesChecked\n")
         return null
     }
 
     private fun findPath(start: Node, end: Node): List<Node>? {
-        val adjacency = mutableMapOf<String, MutableList<Pair<String, Double>>>()
-        masterNav.navGraph.edges.forEach { edge ->
-            adjacency.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
-        }
+        println("┌─ Начало алгоритма Дейкстры ─┐")
 
         val distances = mutableMapOf<String, Double>()
         val previous = mutableMapOf<String, String>()
-        val nodesMap = masterNav.navGraph.nodes.associateBy { it.id }
 
         masterNav.navGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
         distances[start.id] = 0.0
@@ -132,25 +185,52 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
         pq.offer(start.id to 0.0)
 
-        val startClean = start.id.filter { it.isLetterOrDigit() }
-        val endClean = end.id.filter { it.isLetterOrDigit() }
+        var iterations = 0
+        var nodesVisited = 0
+        val visited = mutableSetOf<String>()
 
         while (pq.isNotEmpty()) {
+            iterations++
             val (u, d) = pq.poll() ?: break
 
-            if (d > (distances[u] ?: Double.MAX_VALUE)) continue
-            if (u == end.id) break
+            if (u in visited) continue
+            visited.add(u)
+            nodesVisited++
 
-            adjacency[u]?.forEach { (v, weight) ->
+            if (iterations <= 10 || iterations % 50 == 0) {
+                println("  Итерация $iterations: узел $u, dist=${d}")
+            }
+
+            if (d > (distances[u] ?: Double.MAX_VALUE)) continue
+
+            if (u == end.id) {
+                println("└─ Целевой узел достигнут! ─┘")
+                println("   Итераций: $iterations")
+                println("   Посещено узлов: $nodesVisited")
+                break
+            }
+
+            val neighbors = adjacency[u]
+            if (neighbors == null || neighbors.isEmpty()) {
+                if (iterations <= 10) {
+                    println("    ⚠️  У узла $u нет соседей!")
+                }
+                continue
+            }
+
+            neighbors.forEach { (v, weight) ->
                 val node = nodesMap[v]
                 if (node != null) {
-                    val shouldSkip = if (node.id.contains("AUD")) {
-                        val nodeClean = node.id.filter { it.isLetterOrDigit() }
-                        node.id != start.id &&
-                                node.id != end.id &&
-                                nodeClean != startClean &&
-                                nodeClean != endClean
-                    } else {
+                    val shouldSkip = if(node.type.contains(NodeType.AUDITORIUM)){
+                        val audNum = node.label?.filter { it.isDigit() }?.toIntOrNull()
+                        val startAudNum = start.label?.filter { it.isDigit() }?.toIntOrNull()
+                        val endAudNum = end.label?.filter { it.isDigit() }?.toIntOrNull()
+                        if(audNum == null || startAudNum == null || endAudNum == null){
+                            false
+                        } else{
+                            audNum != startAudNum && audNum != endAudNum
+                        }
+                    } else{
                         false
                     }
 
@@ -166,18 +246,43 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             }
         }
 
-        if (distances[end.id] == Double.MAX_VALUE) return null
+        println("└─ Завершено ─┘")
+        println("   Всего итераций: $iterations")
+        println("   Посещено узлов: $nodesVisited")
 
+        if (distances[end.id] == Double.MAX_VALUE) {
+            println("\n❌ Путь не найден!")
+            println("   Конечный узел недостижим из начального")
+            println("   Расстояние до конечного узла: ${distances[end.id]}")
+
+            // Диагностика
+            println("\n🔍 Диагностика:")
+            println("   Начальный узел ${start.id} имеет ${adjacency[start.id]?.size ?: 0} соседей")
+            println("   Конечный узел ${end.id} имеет ${adjacency[end.id]?.size ?: 0} соседей")
+
+            return null
+        }
+
+        // Восстановление пути
         val path = mutableListOf<Node>()
         var current: String? = end.id
+        var pathLength = 0
+
         while (current != null) {
             nodesMap[current]?.let { path.add(it) }
+            pathLength++
             current = previous[current]
             if (current == start.id) {
                 nodesMap[start.id]?.let { path.add(it) }
+                pathLength++
                 break
             }
+            if (pathLength > 10000) {
+                println("⚠️  Обнаружен цикл при восстановлении пути!")
+                return null
+            }
         }
+
         return path.reversed()
     }
 
@@ -186,7 +291,9 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         for (i in 0 until path.size - 1) {
             val u = path[i]
             val v = path[i + 1]
-            val edge = masterNav.navGraph.edges.find { it.from == u.id && it.to == v.id }
+            val edge = masterNav.navGraph.edges.find {
+                (it.from == u.id && it.to == v.id) || (it.to == u.id && it.from == v.id)
+            }
             distance += edge?.weight ?: 0.0
         }
         return distance
@@ -205,7 +312,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         val segments = groupPathByLocation(fullPath)
 
         val visibleSegments = segments.filter { segment ->
-            segment.nodes.any { !it.id.contains("STAIRS") }
+            segment.nodes.any { !it.type.contains(NodeType.STAIRS) }
         }
 
         val globalStartNode = fullPath.first()
@@ -270,10 +377,10 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         if (path.isEmpty()) return segments
 
         var currentNodes = mutableListOf<Node>()
-        var (currentBuilding, currentFloor) = getNodeLocation(path.first())
+        var (currentBuilding, currentFloor) = path.first().buildNum to path.first().floorNum
 
         path.forEach { node ->
-            val (nodeBuilding, nodeFloor) = getNodeLocation(node)
+            val (nodeBuilding, nodeFloor) = node.buildNum to node.floorNum
 
             if (nodeBuilding != currentBuilding || nodeFloor != currentFloor) {
                 if (currentNodes.isNotEmpty()) {
@@ -296,59 +403,6 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             segments.add(PathSegment(currentBuilding, currentFloor, currentNodes))
         }
         return segments
-    }
-
-    /**
-     * Определяет местоположение ноды: корпус и этаж
-     * Приоритеты определения корпуса:
-     * 1. Суффикс _b_X в id (например, NODE_b_2 -> корпус 2)
-     * 2. Regex AUD_XY (X - корпус, Y - этаж)
-     * 3. Fallback эвристики по содержимому id и координатам
-     */
-    private fun getNodeLocation(node: Node): Pair<Int, Int> {
-        var building = 2  // По умолчанию корпус 2
-        var floor = 1     // По умолчанию этаж 1
-
-        // Приоритет 1: Проверяем суффикс _b_X
-        val buildingMatch = buildingRegex.find(node.id)
-        if (buildingMatch != null) {
-            building = buildingMatch.groupValues[1].toIntOrNull() ?: 2
-        } else {
-            // Приоритет 2: Проверяем формат AUD_XY
-            val audMatch = audRegex.find(node.id)
-            if (audMatch != null) {
-                building = audMatch.groupValues[1].toInt()
-                floor = audMatch.groupValues[2].toInt()
-                return building to floor
-            } else {
-                // Приоритет 3: Fallback эвристики
-                if (node.id.contains("_5_", ignoreCase = true) ||
-                    node.id.contains("BUILDING_5", ignoreCase = true) ||
-                    node.z > 1.0) {
-                    building = 5
-                }
-            }
-        }
-
-        // Определение этажа
-        if (building == 5) {
-            floor = when {
-                node.z > 12.0 -> 4
-                node.z > 9.0 -> 3
-                node.z > 5.0 -> 2
-                else -> 1
-            }
-        } else {
-            // Для других корпусов пытаемся определить этаж по label
-            floor = when {
-                node.label?.contains("поверх 3", ignoreCase = true) == true -> 3
-                node.label?.contains("поверх 2", ignoreCase = true) == true -> 2
-                node.label?.contains("поверх 1", ignoreCase = true) == true -> 1
-                else -> 1
-            }
-        }
-
-        return building to floor
     }
 
     private fun generateFloorData(
@@ -427,7 +481,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
         val routePoints = mutableListOf<Offset>()
         stepPath.forEach { node ->
-            if (!node.id.contains("STAIRS")) {
+            if (!node.type.contains(NodeType.STAIRS)) {
                 routePoints.add(Offset(tx(node.x), ty(node.y)))
             }
         }
@@ -437,13 +491,13 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
         if (stepPath.isNotEmpty() && stepPath.first().id == globalStart.id) {
             val start = stepPath.first()
-            if (!start.id.contains("STAIRS")) {
+            if (!start.type.contains(NodeType.STAIRS)) {
                 startNodeOffset = Offset(tx(start.x), ty(start.y))
             }
         }
         if (stepPath.isNotEmpty() && stepPath.last().id == globalEnd.id) {
             val end = stepPath.last()
-            if (!end.id.contains("STAIRS")) {
+            if (!end.type.contains(NodeType.STAIRS)) {
                 endNodeOffset = Offset(tx(end.x), ty(end.y))
             }
         }

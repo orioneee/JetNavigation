@@ -17,8 +17,14 @@ data class Node(
     @SerialName("y")
     val y: Double,
     @SerialName("z")
-    val z: Double
+    val z: Double,
+    @SerialName("buildNum")
+    private val _buildNum: String,
+    @SerialName("floorNum")
+    val floorNum: Int
 ){
     val type: List<NodeType>
         get() = _type ?: if(id.contains("TURN")) listOf(NodeType.TURN) else emptyList()
+    val buildNum: Int
+        get() = _buildNum.toIntOrNull() ?: 0
 }

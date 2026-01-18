@@ -11,7 +11,7 @@ enum class NodeType {
     WC_MAN,
     @SerialName("WC_W")
     WC_WOMAN,
-    @SerialName("MAIN_ENTERANCE")
+    @SerialName("MAIN_ENTRANCE")
     MAIN_ENTRANCE,
     @SerialName("TRANSFER")
     TRANSFER_TO_ANOTHER_BUILDING,

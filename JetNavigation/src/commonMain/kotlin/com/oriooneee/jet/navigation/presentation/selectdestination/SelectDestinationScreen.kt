@@ -74,6 +74,7 @@ import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
 import com.oriooneee.jet.navigation.presentation.KEY_SELECTED_END_NODE
 import com.oriooneee.jet.navigation.presentation.KEY_SELECTED_START_NODE
 import com.oriooneee.jet.navigation.presentation.navigation.LocalNavController
+import com.oriooneee.jet.navigation.utils.containsAny
 import kotlinx.serialization.json.Json
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -102,54 +103,23 @@ fun SelectDestinationScreen(
     }
 
     val nodesInfo = remember(masterNavigation) {
-        val nav = masterNavigation ?: return@remember emptyList<NodeInfo>()
-        val audRegex = Regex("AUD_(\\d)(\\d)")
-
-        nav.navGraph.nodes
-            .filter { node ->
-                !node.id.startsWith("TURN") &&
-                        !node.id.startsWith("NODE") &&
-                        !node.id.startsWith("TRANSFER")
-            }
-            .map { node ->
-                var building = 2
-                var floor = 1
-
-                val match = audRegex.find(node.id)
-                if (match != null) {
-                    building = match.groupValues[1].toInt()
-                    floor = match.groupValues[2].toInt()
-                } else {
-                    if (node.id.contains("_5_") || node.id.contains("BUILDING_5") || node.z > 1.0) {
-                        building = 5
-                    }
-
-                    if (building == 5) {
-                        floor = when {
-                            node.z > 12.0 -> 4
-                            node.z > 9.0 -> 3
-                            node.z > 5.0 -> 2
-                            else -> 1
-                        }
-                    } else {
-                        if (node.label?.contains("поверх 1", true) == true) floor = 1
-                        else if (node.label?.contains("поверх 2", true) == true) floor = 2
-                        else if (node.label?.contains("поверх 3", true) == true) floor = 3
-                    }
-                }
-
-                NodeInfo(node, building, floor)
-            }
+        masterNavigation?.navGraph?.nodes?.filter { node ->
+            !node.type.containsAny(
+                NodeType.STAIRS,
+                NodeType.TRANSFER_TO_ANOTHER_BUILDING,
+                NodeType.TURN,
+            ) && node.label != null
+        } ?: listOf()
     }
 
     val availableBuildings = remember(nodesInfo) {
-        nodesInfo.map { it.building }.distinct().sorted()
+        nodesInfo.map { it.buildNum }.distinct().sorted()
     }
 
     val availableFloors = remember(nodesInfo, selectedBuilding) {
         if (selectedBuilding != null) {
-            nodesInfo.filter { it.building == selectedBuilding }
-                .map { it.floor }
+            nodesInfo.filter { it.buildNum == selectedBuilding }
+                .map { it.floorNum }
                 .distinct()
                 .sorted()
         } else {
@@ -160,47 +130,41 @@ fun SelectDestinationScreen(
     val filteredNodes by remember(nodesInfo, selectedBuilding, selectedFloor, searchQuery) {
         derivedStateOf {
             nodesInfo.filter { info ->
-                val matchBuilding = selectedBuilding == null || info.building == selectedBuilding
-                val matchFloor = selectedFloor == null || info.floor == selectedFloor
+                val matchBuilding = selectedBuilding == null || info.buildNum == selectedBuilding
+                val matchFloor = selectedFloor == null || info.floorNum == selectedFloor
                 val matchSearch = searchQuery.isEmpty() ||
-                        ((info.node.label?.contains(searchQuery, ignoreCase = true) == true) ||
-                                info.node.id.contains(searchQuery, ignoreCase = true))
+                        ((info.label?.contains(searchQuery, ignoreCase = true) == true) ||
+                                info.id.contains(searchQuery, ignoreCase = true))
 
                 matchBuilding && matchFloor && matchSearch
-            }.sortedWith(
-                compareBy<NodeInfo> { info ->
-                    when {
-                        info.node.type.contains(NodeType.MAIN_ENTRANCE) -> 0
-                        info.node.type.contains(NodeType.WC_MAN) ||
-                                info.node.type.contains(NodeType.WC_WOMAN) ||
-                                info.node.id.contains("WC", ignoreCase = true) -> 1
-                        info.node.type.contains(NodeType.AUDITORIUM) -> 2
-                        info.node.type.contains(NodeType.POINT_OF_INTEREST) -> 3
-                        else -> 4
+            }.sortedBy { info ->
+                when {
+                    info.type.contains(NodeType.MAIN_ENTRANCE) -> {
+                        ((info.buildNum * 10 + info.floorNum) * 100) - 1
                     }
-                }.thenBy { info ->
-                    when {
-                        info.node.type.contains(NodeType.WC_MAN) ||
-                                info.node.type.contains(NodeType.WC_WOMAN) ||
-                                info.node.id.contains("WC", ignoreCase = true) -> {
-                            info.floor
-                        }
-                        info.node.type.contains(NodeType.AUDITORIUM) -> {
-                            info.node.id.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
-                        }
-                        else -> 0
+
+                    info.type.containsAny(NodeType.WC_MAN, NodeType.WC_WOMAN) -> {
+                        (info.buildNum * 10 + info.floorNum) * 100
                     }
-                }.thenBy { it.node.label }
-            )
+
+                    info.type.contains(NodeType.AUDITORIUM) -> {
+                        info.label?.filter { it.isDigit() }?.toIntOrNull() ?: Int.MAX_VALUE
+                    }
+
+                    else -> {
+                        (info.buildNum * 10 + info.floorNum) * 100
+                    }
+                }
+            }
         }
     }
 
     val poiNodes by remember(filteredNodes) {
-        derivedStateOf { filteredNodes.filter { it.node.type.contains(NodeType.POINT_OF_INTEREST) } }
+        derivedStateOf { filteredNodes.filter { it.type.contains(NodeType.POINT_OF_INTEREST) } }
     }
 
     val listNodes by remember(filteredNodes) {
-        derivedStateOf { filteredNodes.filter { !it.node.type.contains(NodeType.POINT_OF_INTEREST) } }
+        derivedStateOf { filteredNodes.filter { !it.type.contains(NodeType.POINT_OF_INTEREST) } }
     }
 
     Scaffold(
@@ -352,10 +316,16 @@ fun SelectDestinationScreen(
                                 ) {
                                     poiNodes.forEach { info ->
                                         SuggestionChip(
-                                            onClick = { handleSelection(SelectNodeResult.SelectedNode(info.node)) },
+                                            onClick = {
+                                                handleSelection(
+                                                    SelectNodeResult.SelectedNode(
+                                                        info
+                                                    )
+                                                )
+                                            },
                                             label = {
                                                 Text(
-                                                    info.node.label ?: info.node.id
+                                                    info.label ?: info.id
                                                 )
                                             },
                                             icon = {
@@ -385,10 +355,10 @@ fun SelectDestinationScreen(
 
                     items(
                         listNodes,
-                        key = { it.node.id }
+                        key = { it.id }
                     ) { info ->
-                        NodeListItem(node = info.node) {
-                            handleSelection(SelectNodeResult.SelectedNode(info.node))
+                        NodeListItem(node = info) {
+                            handleSelection(SelectNodeResult.SelectedNode(info))
                         }
                     }
                 }
@@ -396,12 +366,6 @@ fun SelectDestinationScreen(
         }
     }
 }
-
-private data class NodeInfo(
-    val node: Node,
-    val building: Int,
-    val floor: Int
-)
 
 @Composable
 fun QuickActionRow(
@@ -474,7 +438,12 @@ fun NodeListItem(node: Node, onClick: () -> Unit) {
     val (icon, color) = when {
         node.type.contains(NodeType.POINT_OF_INTEREST) -> Icons.Outlined.Star to MaterialTheme.colorScheme.primary
         node.type.contains(NodeType.MAIN_ENTRANCE) -> Icons.Outlined.DoorFront to MaterialTheme.colorScheme.primary
-        node.id.contains("WC", ignoreCase = true) -> Icons.Outlined.Wc to MaterialTheme.colorScheme.tertiary
+        node.type.containsAll(
+            listOf(NodeType.WC_WOMAN, NodeType.WC_MAN)
+        ) -> Icons.Outlined.Wc to MaterialTheme.colorScheme.tertiary
+
+        node.type.contains(NodeType.WC_MAN) -> Icons.Outlined.Man to Color(0xFF4A90E2)
+        node.type.contains(NodeType.WC_WOMAN) -> Icons.Outlined.Woman to Color(0xFFE91E63)
         node.type.contains(NodeType.AUDITORIUM) -> Icons.Outlined.Class to MaterialTheme.colorScheme.secondary
         node.type.contains(NodeType.TRANSFER_TO_ANOTHER_BUILDING) -> Icons.Outlined.DirectionsWalk to MaterialTheme.colorScheme.primary
         else -> Icons.Outlined.Place to MaterialTheme.colorScheme.onSurfaceVariant
@@ -483,7 +452,7 @@ fun NodeListItem(node: Node, onClick: () -> Unit) {
     ListItem(
         headlineContent = {
             Text(
-                text = node.label ?: node.id,
+                text = (node.label ?: node.id),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
