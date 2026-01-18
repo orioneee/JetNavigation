@@ -53,6 +53,7 @@ import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -77,6 +78,7 @@ import com.oriooneee.jet.navigation.presentation.KEY_SELECTED_START_NODE
 import com.oriooneee.jet.navigation.presentation.navigation.LocalNavController
 import com.oriooneee.jet.navigation.utils.containsAny
 import kotlinx.serialization.json.Json
+val enterColor = Color(0xFF4CAF50).copy(alpha = 0.35f)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -160,12 +162,26 @@ fun SelectDestinationScreen(
         }
     }
 
+    val mainEntranceNodes by remember(filteredNodes) {
+        derivedStateOf { filteredNodes.filter { it.type.contains(NodeType.MAIN_ENTRANCE) } }
+    }
+
     val poiNodes by remember(filteredNodes) {
-        derivedStateOf { filteredNodes.filter { it.type.contains(NodeType.POINT_OF_INTEREST) } }
+        derivedStateOf {
+            filteredNodes.filter {
+                it.type.contains(NodeType.POINT_OF_INTEREST) &&
+                        !it.type.contains(NodeType.MAIN_ENTRANCE)
+            }
+        }
     }
 
     val listNodes by remember(filteredNodes) {
-        derivedStateOf { filteredNodes.filter { !it.type.contains(NodeType.POINT_OF_INTEREST) } }
+        derivedStateOf {
+            filteredNodes.filter {
+                !it.type.contains(NodeType.POINT_OF_INTEREST) &&
+                        !it.type.contains(NodeType.MAIN_ENTRANCE)
+            }
+        }
     }
 
     Scaffold(
@@ -288,6 +304,14 @@ fun SelectDestinationScreen(
                 ) {
 
                     if (!isStartNode && isSelectedStartNode && searchQuery.isEmpty() && selectedBuilding == null) {
+                        item {
+                            Text(
+                                text = "Nearest Quick Actions",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+                            )
+                        }
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             QuickActionRow(
                                 onManWcClick = { handleSelection(SelectNodeResult.NearestManWC) },
@@ -298,6 +322,59 @@ fun SelectDestinationScreen(
 
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Spacer(Modifier.height(4.dp))
+                        }
+                    }
+
+                    if (mainEntranceNodes.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column {
+                                Text(
+                                    text = "Main Entrances",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    mainEntranceNodes.forEach { info ->
+                                        SuggestionChip(
+                                            onClick = {
+                                                handleSelection(
+                                                    SelectNodeResult.SelectedNode(
+                                                        info
+                                                    )
+                                                )
+                                            },
+                                            label = {
+                                                Text(
+                                                    "${info.buildNum} Корпус"
+                                                )
+                                            },
+                                            icon = {
+                                                Icon(
+                                                    Icons.Outlined.ExitToApp,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            },
+                                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                                containerColor = enterColor,
+                                                labelColor = contentColorFor(enterColor),
+                                                iconContentColor = contentColorFor(enterColor)
+                                            ),
+                                            border = SuggestionChipDefaults.suggestionChipBorder(
+                                                enabled = true,
+                                                borderColor = Color.Transparent
+                                            ),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(16.dp))
+                            }
                         }
                     }
 
@@ -326,7 +403,7 @@ fun SelectDestinationScreen(
                                             },
                                             label = {
                                                 Text(
-                                                    info.label ?: info.id
+                                                    "${info.label ?: info.id} (${info.buildNum} Корпус, ${info.floorNum} Поверх)"
                                                 )
                                             },
                                             icon = {
@@ -395,10 +472,10 @@ fun QuickActionRow(
             onClick = onWomanWcClick
         )
         QuickActionButton(
-            icon = Icons.Outlined.DoorFront,
+            icon = Icons.Outlined.ExitToApp,
             label = "Exit",
-            color = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            color = enterColor,
+            contentColor = contentColorFor(enterColor),
             modifier = Modifier.weight(1f),
             onClick = onExitClick
         )
@@ -441,7 +518,7 @@ fun NodeListItem(node: Node, onClick: () -> Unit) {
         node.type.contains(NodeType.MAIN_ENTRANCE) -> Icons.Outlined.ExitToApp to Color(0xFF4CAF50)
         node.type.containsAll(
             listOf(NodeType.WC_WOMAN, NodeType.WC_MAN)
-        ) -> Icons.Outlined.Wc to MaterialTheme.colorScheme.tertiary
+        ) -> Icons.Outlined.Wc to Color(0xFF9B27AF)
 
         node.type.contains(NodeType.WC_MAN) -> Icons.Outlined.Man to Color(0xFF4A90E2)
         node.type.contains(NodeType.WC_WOMAN) -> Icons.Outlined.Woman to Color(0xFFE91E63)

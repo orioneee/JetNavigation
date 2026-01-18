@@ -183,12 +183,14 @@ class ZoomState(private val minScale: Float, private val maxScale: Float) {
             animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
         ) { progress, _ ->
             scale = androidx.compose.ui.util.lerp(startScale, targetScale, progress)
-            val currentOffset = androidx.compose.ui.geometry.lerp(startOffset, targetOffset, progress)
+            val currentOffset =
+                androidx.compose.ui.geometry.lerp(startOffset, targetOffset, progress)
             offsetX = currentOffset.x
             offsetY = currentOffset.y
         }
     }
 }
+
 const val KEY_SELECTED_START_NODE = "selected_start_node"
 const val KEY_SELECTED_END_NODE = "selected_end_node"
 
@@ -800,9 +802,6 @@ fun ZoomableMapCanvas(
     val iconPainters = renderData.icons.map { it.icon }.distinct()
         .associateWith { androidx.compose.ui.graphics.vector.rememberVectorPainter(it) }
 
-    val baseCircleRadiusPx = with(density) { 4.dp.toPx() }
-    val baseIconSizePx = with(density) { 4.dp.toPx() }
-
     val renderedLabels = remember(renderData, density) {
         val linesForCollision = mutableListOf<Pair<Offset, Offset>>()
         renderData.polylines.forEach { poly ->
@@ -849,7 +848,11 @@ fun ZoomableMapCanvas(
         val goodSizes = labelMaxSizes.map { it.second.value }.filter { it > 0 }
         val standardSizeVal = if (goodSizes.isNotEmpty()) goodSizes.min() else minReadableSizeVal
         labelMaxSizes.map { (label, maxFitSize) ->
-            val constrainedSize = if (maxFitSize.value < minReadableSizeVal) minReadableSizeVal else minOf(maxFitSize.value, standardSizeVal)
+            val constrainedSize =
+                if (maxFitSize.value < minReadableSizeVal) minReadableSizeVal else minOf(
+                    maxFitSize.value,
+                    standardSizeVal
+                )
             RenderedLabel(label, constrainedSize.sp, true)
         }
     }
@@ -904,7 +907,11 @@ fun ZoomableMapCanvas(
                         drawPath(
                             path = path,
                             color = planColor,
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            style = Stroke(
+                                width = strokeWidth,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
                         )
                     }
                 }
@@ -917,7 +924,11 @@ fun ZoomableMapCanvas(
                         drawPath(
                             path = path,
                             color = planColor,
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            style = Stroke(
+                                width = strokeWidth,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
                         )
                     }
                 }
@@ -977,14 +988,18 @@ fun ZoomableMapCanvas(
                             val dx = end.x - start.x
                             val dy = end.y - start.y
                             val segmentLength = kotlin.math.sqrt(dx * dx + dy * dy)
-                            val currentAngle = kotlin.math.atan2(dy, dx) * (180 / kotlin.math.PI.toFloat())
+                            val currentAngle =
+                                kotlin.math.atan2(dy, dx) * (180 / kotlin.math.PI.toFloat())
 
                             var startBuffer = safeCornerDistance
                             if (i > 0) {
                                 val prevStart = renderData.routePath[i - 1]
                                 val prevDx = start.x - prevStart.x
                                 val prevDy = start.y - prevStart.y
-                                val prevAngle = kotlin.math.atan2(prevDy, prevDx) * (180 / kotlin.math.PI.toFloat())
+                                val prevAngle = kotlin.math.atan2(
+                                    prevDy,
+                                    prevDx
+                                ) * (180 / kotlin.math.PI.toFloat())
                                 val diff = kotlin.math.abs(currentAngle - prevAngle)
                                 val angleDelta = if (diff > 180) 360 - diff else diff
                                 if (angleDelta < straightAngleThreshold) startBuffer = 0f
@@ -997,7 +1012,10 @@ fun ZoomableMapCanvas(
                                 val nextEnd = renderData.routePath[i + 2]
                                 val nextDx = nextEnd.x - end.x
                                 val nextDy = nextEnd.y - end.y
-                                val nextAngle = kotlin.math.atan2(nextDy, nextDx) * (180 / kotlin.math.PI.toFloat())
+                                val nextAngle = kotlin.math.atan2(
+                                    nextDy,
+                                    nextDx
+                                ) * (180 / kotlin.math.PI.toFloat())
                                 val diff = kotlin.math.abs(nextAngle - currentAngle)
                                 val angleDelta = if (diff > 180) 360 - diff else diff
                                 if (angleDelta < straightAngleThreshold) endBuffer = 0f
@@ -1008,7 +1026,8 @@ fun ZoomableMapCanvas(
                             val segmentEndDist = currentAccumulatedDistance + segmentLength
 
                             while (targetAccumulatedDistance < segmentEndDist) {
-                                val localPos = targetAccumulatedDistance - currentAccumulatedDistance
+                                val localPos =
+                                    targetAccumulatedDistance - currentAccumulatedDistance
 
                                 if (localPos > startBuffer && localPos < (segmentLength - endBuffer)) {
                                     val fraction = localPos / segmentLength
@@ -1052,6 +1071,15 @@ fun ZoomableMapCanvas(
                     drawCircle(color = endNodeColor, radius = strokeWidth * 3f, center = it)
                 }
 
+                val referenceFontSizeSp = if (renderedLabels.isNotEmpty()) {
+                    renderedLabels.map { it.fontSize.value }.average().toFloat()
+                } else {
+                    12f
+                }
+                val baseSizePx = with(density) { referenceFontSizeSp.sp.toPx() }
+                val baseIconSize = baseSizePx
+                val circleRadius = (baseIconSize / 2f) * 1.5f
+
                 renderedLabels.forEach { rendered ->
                     if (rendered.visible) {
                         val label = rendered.label
@@ -1079,44 +1107,30 @@ fun ZoomableMapCanvas(
                         drawText(measuredText, topLeft = Offset(centeredX, centeredY))
                     }
                 }
-            }
 
-            val fitScale = if (contentSize.width > 0 && contentSize.height > 0) {
-                minOf(
-                    containerSize.width / contentSize.width,
-                    containerSize.height / contentSize.height
-                )
-            } else 1f
+                renderData.icons.forEach { iconLabel ->
+                    val painter = iconPainters[iconLabel.icon] ?: return@forEach
 
-            val relativeScale = if (fitScale > 0) zoomState.scale / fitScale else 1f
-
-            val scaledCircleRadius = baseCircleRadiusPx * relativeScale
-            val scaledIconSize = baseIconSizePx * relativeScale
-
-            renderData.icons.forEach { iconLabel ->
-                val painter = iconPainters[iconLabel.icon] ?: return@forEach
-
-                val screenX = (iconLabel.x * zoomState.scale) + zoomState.offsetX
-                val screenY = (iconLabel.y * zoomState.scale) + zoomState.offsetY
-
-                if (screenX + scaledCircleRadius > 0 && screenX - scaledCircleRadius < containerSize.width &&
-                    screenY + scaledCircleRadius > 0 && screenY - scaledCircleRadius < containerSize.height
-                ) {
                     drawCircle(
                         color = iconLabel.tint.copy(alpha = 0.1f),
-                        radius = scaledCircleRadius,
-                        center = Offset(screenX, screenY)
+                        radius = circleRadius,
+                        center = Offset(iconLabel.x, iconLabel.y)
                     )
 
-                    translate(
-                        left = screenX - scaledIconSize / 2,
-                        top = screenY - scaledIconSize / 2
-                    ) {
-                        with(painter) {
-                            draw(
-                                size = Size(scaledIconSize, scaledIconSize),
-                                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(iconLabel.tint)
-                            )
+                    withTransform({
+                        translate(iconLabel.x, iconLabel.y)
+                        scale(1f / zoomState.scale, 1f / zoomState.scale, Offset.Zero)
+                    }) {
+                        val targetScreenSize = baseIconSize * zoomState.scale
+                        translate(-targetScreenSize / 2f, -targetScreenSize / 2f) {
+                            with(painter) {
+                                draw(
+                                    size = Size(targetScreenSize, targetScreenSize),
+                                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                                        iconLabel.tint
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -1140,6 +1154,7 @@ fun ZoomableMapCanvas(
         }
     }
 }
+
 private fun rectIntersectsLine(rect: Rect, p1: Offset, p2: Offset): Boolean {
     if (rect.contains(p1) || rect.contains(p2)) return true
     if ((p1.x < rect.left && p2.x < rect.left) ||
