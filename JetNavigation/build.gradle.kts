@@ -51,6 +51,10 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.android.ndk27)
+            implementation(libs.maps.compose.ndk27)
+
+
         }
 
         jvmMain.dependencies {
@@ -118,6 +122,16 @@ mavenPublishing {
 }
 
 buildConfig {
-    // BuildConfig configuration here.
-    // https://github.com/gmazzo/gradle-buildconfig-plugin#usage-in-kts
+    packageName("com.oriooneee.jet.navigation.buildconfig")
+
+    val mapsApiKey = providers.provider {
+        rootProject.file("local.properties")
+            .takeIf { it.exists() }
+            ?.readLines()
+            ?.firstOrNull { it.startsWith("MAPS_API_KEY=") }
+            ?.substringAfter("=")
+            ?: ""
+    }.getOrElse("")
+
+    buildConfigField<String>("MAPS_API_KEY", mapsApiKey)
 }

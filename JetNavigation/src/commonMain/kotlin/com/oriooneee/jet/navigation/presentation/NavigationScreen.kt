@@ -102,6 +102,7 @@ import com.oriooneee.jet.navigation.TextLabel
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 import com.oriooneee.jet.navigation.ResolvedNode
+import com.oriooneee.jet.navigation.buildconfig.BuildConfig
 import com.oriooneee.jet.navigation.domain.entities.graph.InDoorNode
 import com.oriooneee.jet.navigation.presentation.navigation.LocalNavController
 import com.oriooneee.jet.navigation.presentation.navigation.Route
@@ -200,7 +201,8 @@ const val KEY_SELECTED_END_NODE = "selected_end_node"
 @OptIn(ExperimentalLayoutApi::class, ExperimentalAnimationApi::class)
 @Composable
 fun NavigationScreen(
-    viewModel: NavigationViewModel
+    viewModel: NavigationViewModel,
+    isDarkTheme: Boolean
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -314,33 +316,7 @@ fun NavigationScreen(
                                     }
 
                                     is NavigationStep.OutDoorMaps -> {
-                                        // TODO: Implement outdoor map view with coordinates
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(Color(0xFF81C784).copy(alpha = 0.2f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Icon(
-                                                    Icons.Outlined.Park,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(80.dp),
-                                                    tint = Color(0xFF4CAF50)
-                                                )
-                                                Spacer(Modifier.height(16.dp))
-                                                Text(
-                                                    "Outdoor Navigation",
-                                                    style = MaterialTheme.typography.headlineMedium,
-                                                    color = Color(0xFF2E7D32)
-                                                )
-                                                Text(
-                                                    "${step.path.size} waypoints",
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
+                                        MapComponent(step = step, isDarkTheme = isDarkTheme)
                                     }
                                     is NavigationStep.TransitionToInDoor -> {
                                         TransitionToInDoorScreen(toBuilding = step.toBuilding)
@@ -1448,16 +1424,6 @@ fun TransitionToOutDoorScreen(fromBuilding: Int) {
         }
 
         Spacer(Modifier.height(48.dp))
-
-        Icon(
-            imageVector = Icons.Default.WbSunny,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = Color(0xFFFFB300)
-        )
-
-        Spacer(Modifier.height(16.dp))
-
         Text(
             text = "Exit the Building",
             style = MaterialTheme.typography.headlineMedium,
@@ -1565,16 +1531,6 @@ fun TransitionToInDoorScreen(toBuilding: Int) {
         }
 
         Spacer(Modifier.height(48.dp))
-
-        Icon(
-            imageVector = Icons.Default.LocationCity,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = buildingColor
-        )
-
-        Spacer(Modifier.height(16.dp))
-
         Text(
             text = "Enter Building $toBuilding",
             style = MaterialTheme.typography.headlineMedium,

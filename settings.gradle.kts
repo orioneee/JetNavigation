@@ -18,14 +18,19 @@ pluginManagement {
 dependencyResolutionManagement {
     repositories {
         google {
-            content { 
+            content {
               	includeGroupByRegex("com\\.android.*")
               	includeGroupByRegex("com\\.google.*")
               	includeGroupByRegex("androidx.*")
               	includeGroupByRegex("android.*")
+              	includeGroupByRegex("org\\.chromium.*")
             }
         }
         mavenCentral()
+        maven {
+            url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
+        }
+
     }
 }
 include(":JetNavigation")

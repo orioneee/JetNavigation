@@ -27,7 +27,9 @@ val LocalNavController = staticCompositionLocalOf<NavController> {
 }
 
 @Composable
-fun NavigationApp() {
+fun NavigationApp(
+    isDarkTheme: Boolean
+) {
     val navController = rememberNavController()
     val vm: NavigationViewModel = remember { NavigationViewModel() }
     CompositionLocalProvider(
@@ -46,7 +48,7 @@ fun NavigationApp() {
                         fadeIn(animationSpec = tween(300))
                     }
                 ) {
-                    NavigationScreen(vm)
+                    NavigationScreen(vm, isDarkTheme)
                 }
 
                 composable<Route.SelectDestination>(

@@ -15,6 +15,6 @@ fun App() {
             .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        NavigationApp()
+        NavigationApp(false)
     }
 }

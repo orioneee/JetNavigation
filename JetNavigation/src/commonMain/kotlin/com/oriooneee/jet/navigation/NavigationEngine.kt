@@ -17,6 +17,22 @@ import com.oriooneee.jet.navigation.domain.entities.graph.MasterNavigation
 import com.oriooneee.jet.navigation.domain.entities.graph.NodeType
 import com.oriooneee.jet.navigation.domain.entities.graph.OutDoorNode
 import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+object Log {
+    fun d(tag: String, message: String) {
+        println("DEBUG: [$tag] $message")
+    }
+
+    fun e(tag: String, message: String) {
+        println("ERROR: [$tag] $message")
+    }
+}
+
+private const val TAG = "NavEngine"
 
 data class TextLabel(
     val text: String,
@@ -68,34 +84,54 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
     private val outputWidth = 2000.0
     private val paddingPct = 0.05
 
-    // Indoor
-    private val inDoorAdjacency: Map<String, List<Pair<String, Double>>> = buildInDoorAdjacencyMap()
     private val inDoorNodesMap: Map<String, InDoorNode> = masterNav.inDoorNavGraph.nodes.associateBy { it.id }
-
-    // Outdoor
-    private val outDoorAdjacency: Map<String, List<Pair<String, Double>>> = buildOutDoorAdjacencyMap()
     private val outDoorNodesMap: Map<String, OutDoorNode> = masterNav.outDoorNavGraph.nodes.associateBy { it.id }
+    private val globalAdjacency: Map<String, List<Pair<String, Double>>> = buildGlobalAdjacencyMap()
 
-    // Legacy alias
-    private val adjacency get() = inDoorAdjacency
-    private val nodesMap get() = inDoorNodesMap
+    init {
+        Log.d(TAG, "NavigationEngine INIT (Unified Graph)")
+        Log.d(TAG, "Total nodes: ${inDoorNodesMap.size + outDoorNodesMap.size}")
+        Log.d(TAG, "Total connections: ${globalAdjacency.values.sumOf { it.size }}")
+    }
 
-    private fun buildInDoorAdjacencyMap(): Map<String, MutableList<Pair<String, Double>>> {
+    private fun buildGlobalAdjacencyMap(): Map<String, List<Pair<String, Double>>> {
         val adj = mutableMapOf<String, MutableList<Pair<String, Double>>>()
+
         masterNav.inDoorNavGraph.edges.forEach { edge ->
             adj.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
             adj.getOrPut(edge.to) { mutableListOf() }.add(edge.from to edge.weight)
         }
-        return adj
-    }
 
-    private fun buildOutDoorAdjacencyMap(): Map<String, MutableList<Pair<String, Double>>> {
-        val adj = mutableMapOf<String, MutableList<Pair<String, Double>>>()
         masterNav.outDoorNavGraph.edges.forEach { edge ->
             adj.getOrPut(edge.from) { mutableListOf() }.add(edge.to to edge.weight)
             adj.getOrPut(edge.to) { mutableListOf() }.add(edge.from to edge.weight)
         }
+
+        val indoorEntrances = inDoorNodesMap.values.filter { it.type.contains(NodeType.MAIN_ENTRANCE) }
+
+        indoorEntrances.forEach { indoorNode ->
+            val outdoorNode = findMatchingOutdoorNode(indoorNode)
+            if (outdoorNode != null) {
+                val connectionWeight = 5.0
+                adj.getOrPut(indoorNode.id) { mutableListOf() }.add(outdoorNode.id to connectionWeight)
+                adj.getOrPut(outdoorNode.id) { mutableListOf() }.add(indoorNode.id to connectionWeight)
+            }
+        }
+
         return adj
+    }
+
+    private fun findMatchingOutdoorNode(entrance: InDoorNode): OutDoorNode? {
+        val exactMatch = outDoorNodesMap.values
+            .filter { it.type.contains(NodeType.MAIN_ENTRANCE) }
+            .find { it.label?.contains("${entrance.buildNum}") == true }
+
+        if (exactMatch != null) return exactMatch
+
+        val candidates = outDoorNodesMap.values.filter { it.type.contains(NodeType.MAIN_ENTRANCE) }
+        if (candidates.isEmpty()) return null
+
+        return candidates.firstOrNull()
     }
 
     fun resolveSelection(
@@ -107,190 +143,54 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             is SelectNodeResult.SelectedOutDoorNode -> ResolvedNode.OutDoor(result.node)
             is SelectNodeResult.NearestManWC -> {
                 if (referenceNode == null) return null
-                findNearestNode(referenceNode) {
-                    it.type.contains(NodeType.WC_MAN)
-                }?.let { ResolvedNode.InDoor(it) }
+                findNearestNodeGlobal(referenceNode.id) { resolved ->
+                    resolved is ResolvedNode.InDoor && resolved.node.type.contains(NodeType.WC_MAN)
+                }
             }
-
             is SelectNodeResult.NearestWomanWC -> {
                 if (referenceNode == null) return null
-                findNearestNode(referenceNode) {
-                    it.type.contains(NodeType.WC_WOMAN)
-                }?.let { ResolvedNode.InDoor(it) }
+                findNearestNodeGlobal(referenceNode.id) { resolved ->
+                    resolved is ResolvedNode.InDoor && resolved.node.type.contains(NodeType.WC_WOMAN)
+                }
             }
-
             is SelectNodeResult.NearestMainEntrance -> {
                 if (referenceNode == null) return null
-                findNearestNode(referenceNode) {
-                    it.type.contains(NodeType.MAIN_ENTRANCE)
-                }?.let { ResolvedNode.InDoor(it) }
+                findNearestNodeGlobal(referenceNode.id) { resolved ->
+                    resolved is ResolvedNode.InDoor && resolved.node.type.contains(NodeType.MAIN_ENTRANCE)
+                }
             }
         }
     }
 
-    fun getRoute(
-        from: InDoorNode,
-        to: InDoorNode
-    ): NavigationDirection {
-        val path = findPath(from, to)
-
-        if (path == null) {
-            return NavigationDirection(emptyList(), 0.0)
-        }
-
-        val totalDistance = calculateTotalDistance(path)
-        val steps = buildNavigationSteps(path)
-        return NavigationDirection(steps, totalDistance)
+    fun getRoute(from: InDoorNode, to: InDoorNode): NavigationDirection {
+        return getRoute(ResolvedNode.InDoor(from), ResolvedNode.InDoor(to))
     }
 
     fun getRoute(from: ResolvedNode, to: ResolvedNode): NavigationDirection {
-        return when {
-            from is ResolvedNode.InDoor && to is ResolvedNode.InDoor -> {
-                getRoute(from.node, to.node)
-            }
-            from is ResolvedNode.OutDoor && to is ResolvedNode.OutDoor -> {
-                getOutDoorRoute(from.node, to.node)
-            }
-            from is ResolvedNode.InDoor && to is ResolvedNode.OutDoor -> {
-                getMixedRoute(from.node, to.node)
-            }
-            from is ResolvedNode.OutDoor && to is ResolvedNode.InDoor -> {
-                getMixedRoute(from.node, to.node)
-            }
-            else -> NavigationDirection(emptyList(), 0.0)
-        }
-    }
+        Log.d(TAG, "getRoute: ${from.id} -> ${to.id}")
 
-    fun getOutDoorRoute(from: OutDoorNode, to: OutDoorNode): NavigationDirection {
-        val startNode = findNearestConnectedOutDoorNodeToPoi(from)
-        val endNode = findNearestConnectedOutDoorNodeToPoi(to)
-
-        val path = if (startNode != null && endNode != null) {
-            findOutDoorPath(startNode, endNode)
-        } else null
-
-        val totalDistance = path?.let { calculateOutDoorDistance(it) } ?: 0.0
-
-        val coordinates = buildList {
-            add(Coordinates(from.lat, from.lon))
-            path?.forEach { add(Coordinates(it.lat, it.lon)) }
-            add(Coordinates(to.lat, to.lon))
+        val pathIds = findPathGlobal(from.id, to.id)
+        if (pathIds == null) {
+            Log.e(TAG, "No path found")
+            return NavigationDirection(emptyList(), 0.0)
         }
 
-        return NavigationDirection(
-            steps = listOf(NavigationStep.OutDoorMaps(coordinates)),
-            totalDistanceMeters = totalDistance
-        )
+        val resolvedPath = pathIds.mapNotNull { resolveNodeById(it) }
+        val totalDistance = calculateTotalDistanceGlobal(resolvedPath)
+        val steps = buildStepsFromUnifiedPath(resolvedPath)
+
+        return NavigationDirection(steps, totalDistance)
     }
 
-    private fun getMixedRoute(from: InDoorNode, to: OutDoorNode): NavigationDirection {
-        val nearestExit = findNearestNode(from) { it.type.contains(NodeType.MAIN_ENTRANCE) }
-            ?: return NavigationDirection(emptyList(), 0.0)
-
-        val indoorPath = findPath(from, nearestExit) ?: return NavigationDirection(emptyList(), 0.0)
-        val indoorDistance = calculateTotalDistance(indoorPath)
-        val indoorSteps = buildNavigationSteps(indoorPath)
-
-        val exitOutdoorNode = findNearestOutDoorNodeToEntrance(nearestExit)
-        val targetOutdoorNode = findNearestConnectedOutDoorNodeToPoi(to)
-
-        val outdoorPath = if (exitOutdoorNode != null && targetOutdoorNode != null) {
-            findOutDoorPath(exitOutdoorNode, targetOutdoorNode)
-        } else null
-
-        val outdoorDistance = outdoorPath?.let { calculateOutDoorDistance(it) } ?: 0.0
-
-        // Include the target POI coordinates at the end
-        val outdoorCoordinates = buildList {
-            outdoorPath?.forEach { add(Coordinates(it.lat, it.lon)) }
-            // Add the actual POI location at the end
-            add(Coordinates(to.lat, to.lon))
-        }
-
-        val steps = buildList {
-            addAll(indoorSteps)
-            add(NavigationStep.TransitionToOutDoor(fromBuilding = nearestExit.buildNum))
-            if (outdoorCoordinates.isNotEmpty()) {
-                add(NavigationStep.OutDoorMaps(outdoorCoordinates))
-            }
-        }
-
-        return NavigationDirection(steps, indoorDistance + outdoorDistance)
-    }
-
-    private fun getMixedRoute(from: OutDoorNode, to: InDoorNode): NavigationDirection {
-        val nearestEntrance = findNearestNode(to) { it.type.contains(NodeType.MAIN_ENTRANCE) }
-            ?: to
-
-        val startOutdoorNode = findNearestConnectedOutDoorNodeToPoi(from)
-        val entranceOutdoorNode = findNearestOutDoorNodeToEntrance(nearestEntrance)
-
-        val outdoorPath = if (startOutdoorNode != null && entranceOutdoorNode != null) {
-            findOutDoorPath(startOutdoorNode, entranceOutdoorNode)
-        } else null
-
-        val outdoorDistance = outdoorPath?.let { calculateOutDoorDistance(it) } ?: 0.0
-
-        // Include the starting POI coordinates at the beginning
-        val outdoorCoordinates = buildList {
-            add(Coordinates(from.lat, from.lon))
-            outdoorPath?.forEach { add(Coordinates(it.lat, it.lon)) }
-        }
-
-        val indoorPath = findPath(nearestEntrance, to) ?: return NavigationDirection(emptyList(), 0.0)
-        val indoorDistance = calculateTotalDistance(indoorPath)
-        val indoorSteps = buildNavigationSteps(indoorPath)
-
-        val steps = buildList {
-            if (outdoorCoordinates.isNotEmpty()) {
-                add(NavigationStep.OutDoorMaps(outdoorCoordinates))
-            }
-            add(NavigationStep.TransitionToInDoor(toBuilding = nearestEntrance.buildNum))
-            addAll(indoorSteps)
-        }
-
-        return NavigationDirection(steps, outdoorDistance + indoorDistance)
-    }
-
-    private fun findNearestOutDoorNodeToEntrance(entrance: InDoorNode): OutDoorNode? {
-        // Find outdoor entrance by MAIN_ENTRANCE type and building number in label
-        val outdoorEntrance = outDoorNodesMap.values
-            .filter { it.type.contains(NodeType.MAIN_ENTRANCE) }
-            .find { it.label?.contains("${entrance.buildNum}") == true }
-            ?: outDoorNodesMap.values.firstOrNull { it.type.contains(NodeType.MAIN_ENTRANCE) }
-
-        // Find the nearest connected node (TURN node) by coordinates
-        return outdoorEntrance?.let { findNearestConnectedOutDoorNode(it) }
-    }
-
-    private fun findNearestConnectedOutDoorNode(targetNode: OutDoorNode): OutDoorNode? {
-        // Find node that has edges (is connected to graph) and is closest to target
-        val connectedNodeIds = outDoorAdjacency.keys
-        return connectedNodeIds
-            .mapNotNull { outDoorNodesMap[it] }
-            .minByOrNull { node ->
-                haversineDistance(targetNode.lat, targetNode.lon, node.lat, node.lon)
-            }
-    }
-
-    private fun findNearestConnectedOutDoorNodeToPoi(poi: OutDoorNode): OutDoorNode? {
-        val connectedNodeIds = outDoorAdjacency.keys
-        return connectedNodeIds
-            .mapNotNull { outDoorNodesMap[it] }
-            .minByOrNull { node ->
-                haversineDistance(poi.lat, poi.lon, node.lat, node.lon)
-            }
-    }
-
-    private fun findOutDoorPath(start: OutDoorNode, end: OutDoorNode): List<OutDoorNode>? {
+    private fun findNearestNodeGlobal(
+        startId: String,
+        criteria: (ResolvedNode) -> Boolean
+    ): ResolvedNode? {
         val distances = mutableMapOf<String, Double>()
-        val previous = mutableMapOf<String, String>()
-
-        masterNav.outDoorNavGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
-        distances[start.id] = 0.0
-
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
-        pq.offer(start.id to 0.0)
+
+        distances[startId] = 0.0
+        pq.offer(startId to 0.0)
 
         val visited = mutableSetOf<String>()
 
@@ -302,85 +202,12 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
             if (d > (distances[u] ?: Double.MAX_VALUE)) continue
 
-            if (u == end.id) break
-
-            val neighbors = outDoorAdjacency[u] ?: continue
-
-            neighbors.forEach { (v, weight) ->
-                val alt = d + weight
-                if (alt < (distances[v] ?: Double.MAX_VALUE)) {
-                    distances[v] = alt
-                    previous[v] = u
-                    pq.offer(v to alt)
-                }
-            }
-        }
-
-        if (distances[end.id] == Double.MAX_VALUE) return null
-
-        val path = mutableListOf<OutDoorNode>()
-        var current: String? = end.id
-
-        while (current != null) {
-            outDoorNodesMap[current]?.let { path.add(it) }
-            current = previous[current]
-            if (current == start.id) {
-                outDoorNodesMap[start.id]?.let { path.add(it) }
-                break
-            }
-        }
-
-        return path.reversed()
-    }
-
-    private fun calculateOutDoorDistance(path: List<OutDoorNode>): Double {
-        var distance = 0.0
-        for (i in 0 until path.size - 1) {
-            val u = path[i]
-            val v = path[i + 1]
-            val edge = masterNav.outDoorNavGraph.edges.find {
-                (it.from == u.id && it.to == v.id) || (it.to == u.id && it.from == v.id)
-            }
-            distance += edge?.weight ?: haversineDistance(u.lat, u.lon, v.lat, v.lon)
-        }
-        return distance
-    }
-
-    private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val r = 6371000.0 // Earth radius in meters
-        val dLat = (lat2 - lat1) * kotlin.math.PI / 180.0
-        val dLon = (lon2 - lon1) * kotlin.math.PI / 180.0
-        val lat1Rad = lat1 * kotlin.math.PI / 180.0
-        val lat2Rad = lat2 * kotlin.math.PI / 180.0
-        val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
-                kotlin.math.cos(lat1Rad) * kotlin.math.cos(lat2Rad) *
-                kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
-        val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
-        return r * c
-    }
-
-    private fun findNearestNode(
-        referenceNode: InDoorNode,
-        criteria: (InDoorNode) -> Boolean
-    ): InDoorNode? {
-        val distances = mutableMapOf<String, Double>()
-        masterNav.inDoorNavGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
-        distances[referenceNode.id] = 0.0
-
-        val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
-        pq.offer(referenceNode.id to 0.0)
-
-        while (pq.isNotEmpty()) {
-            val (u, d) = pq.poll() ?: break
-
-            if (d > (distances[u] ?: Double.MAX_VALUE)) continue
-
-            val currentNode = nodesMap[u]
-            if (currentNode != null && u != referenceNode.id && criteria(currentNode)) {
-                return currentNode
+            val resolvedNode = resolveNodeById(u)
+            if (resolvedNode != null && u != startId && criteria(resolvedNode)) {
+                return resolvedNode
             }
 
-            adjacency[u]?.forEach { (v, weight) ->
+            globalAdjacency[u]?.forEach { (v, weight) ->
                 val alt = d + weight
                 if (alt < (distances[v] ?: Double.MAX_VALUE)) {
                     distances[v] = alt
@@ -391,15 +218,13 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         return null
     }
 
-    private fun findPath(start: InDoorNode, end: InDoorNode): List<InDoorNode>? {
+    private fun findPathGlobal(startId: String, endId: String): List<String>? {
         val distances = mutableMapOf<String, Double>()
         val previous = mutableMapOf<String, String>()
-
-        masterNav.inDoorNavGraph.nodes.forEach { distances[it.id] = Double.MAX_VALUE }
-        distances[start.id] = 0.0
-
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
-        pq.offer(start.id to 0.0)
+
+        distances[startId] = 0.0
+        pq.offer(startId to 0.0)
 
         val visited = mutableSetOf<String>()
 
@@ -410,185 +235,166 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             visited.add(u)
 
             if (d > (distances[u] ?: Double.MAX_VALUE)) continue
+            if (u == endId) break
 
-            if (u == end.id) {
-                break
-            }
-
-            val neighbors = adjacency[u] ?: continue
-
-            neighbors.forEach { (v, weight) ->
-                val node = nodesMap[v]
-                if (node != null) {
-                    val shouldSkip = if (node.type.contains(NodeType.AUDITORIUM)) {
-                        val audNum = node.label?.filter { it.isDigit() }?.toIntOrNull()
-                        val startAudNum = start.label?.filter { it.isDigit() }?.toIntOrNull()
-                        val endAudNum = end.label?.filter { it.isDigit() }?.toIntOrNull()
-                        if (audNum == null || startAudNum == null || endAudNum == null) {
-                            false
-                        } else {
-                            audNum != startAudNum && audNum != endAudNum
-                        }
-                    } else {
-                        false
-                    }
-
-                    if (!shouldSkip) {
-                        val alt = d + weight
-                        if (alt < (distances[v] ?: Double.MAX_VALUE)) {
-                            distances[v] = alt
-                            previous[v] = u
-                            pq.offer(v to alt)
-                        }
-                    }
+            globalAdjacency[u]?.forEach { (v, weight) ->
+                val alt = d + weight
+                if (alt < (distances[v] ?: Double.MAX_VALUE)) {
+                    distances[v] = alt
+                    previous[v] = u
+                    pq.offer(v to alt)
                 }
             }
         }
 
-        if (distances[end.id] == Double.MAX_VALUE) {
-            return null
-        }
+        if (!previous.containsKey(endId) && startId != endId) return null
 
-        val path = mutableListOf<InDoorNode>()
-        var current: String? = end.id
-
+        val path = mutableListOf<String>()
+        var current: String? = endId
         while (current != null) {
-            nodesMap[current]?.let { path.add(it) }
+            path.add(current)
             current = previous[current]
-            if (current == start.id) {
-                nodesMap[start.id]?.let { path.add(it) }
-                break
-            }
         }
-
         return path.reversed()
     }
 
-    private fun calculateTotalDistance(path: List<InDoorNode>): Double {
+    private fun calculateTotalDistanceGlobal(path: List<ResolvedNode>): Double {
         var distance = 0.0
         for (i in 0 until path.size - 1) {
             val u = path[i]
             val v = path[i + 1]
-            val edge = masterNav.inDoorNavGraph.edges.find {
-                (it.from == u.id && it.to == v.id) || (it.to == u.id && it.from == v.id)
+
+            val edgeWeight = globalAdjacency[u.id]?.find { it.first == v.id }?.second
+            if (edgeWeight != null) {
+                distance += edgeWeight
+            } else if (u is ResolvedNode.OutDoor && v is ResolvedNode.OutDoor) {
+                distance += haversineDistance(u.node.lat, u.node.lon, v.node.lat, v.node.lon)
             }
-            distance += edge?.weight ?: 0.0
         }
         return distance
     }
 
-    private data class PathSegment(
-        val buildingNum: Int,
-        val floorNum: Int,
-        val nodes: List<InDoorNode>
-    )
+    private fun resolveNodeById(id: String): ResolvedNode? {
+        inDoorNodesMap[id]?.let { return ResolvedNode.InDoor(it) }
+        outDoorNodesMap[id]?.let { return ResolvedNode.OutDoor(it) }
+        return null
+    }
 
-    private fun buildNavigationSteps(fullPath: List<InDoorNode>): List<NavigationStep> {
+    private fun buildStepsFromUnifiedPath(path: List<ResolvedNode>): List<NavigationStep> {
         val steps = mutableListOf<NavigationStep>()
-        if (fullPath.isEmpty()) return steps
+        if (path.isEmpty()) return steps
 
-        val segments = groupPathByLocation(fullPath)
+        val segments = mutableListOf<List<ResolvedNode>>()
+        var currentSegment = mutableListOf<ResolvedNode>()
 
-        val visibleSegments = segments.filter { segment ->
-            segment.nodes.any { !it.type.contains(NodeType.STAIRS) }
+        path.forEachIndexed { index, node ->
+            if (index == 0) {
+                currentSegment.add(node)
+            } else {
+                val prev = path[index - 1]
+                val isSplit = when {
+                    prev is ResolvedNode.InDoor && node is ResolvedNode.OutDoor -> true
+                    prev is ResolvedNode.OutDoor && node is ResolvedNode.InDoor -> true
+                    prev is ResolvedNode.InDoor && node is ResolvedNode.InDoor -> {
+                        prev.node.buildNum != node.node.buildNum || prev.node.floorNum != node.node.floorNum
+                    }
+                    else -> false
+                }
+
+                if (isSplit) {
+                    segments.add(ArrayList(currentSegment))
+                    currentSegment = mutableListOf()
+                }
+                currentSegment.add(node)
+            }
+        }
+        if (currentSegment.isNotEmpty()) {
+            segments.add(currentSegment)
         }
 
-        val globalStartNode = fullPath.first()
-        val globalEndNode = fullPath.last()
+        val globalStart = path.first()
+        val globalEnd = path.last()
 
+        segments.forEachIndexed { i, segment ->
+            val firstNode = segment.first()
 
-        visibleSegments.forEachIndexed { index, segment ->
+            if (i > 0) {
+                val prevSegment = segments[i - 1]
+                val prevLast = prevSegment.last()
 
-            if (index > 0) {
-                val prevSegment = visibleSegments[index - 1]
-
-                if (prevSegment.buildingNum != segment.buildingNum) {
-                    steps.add(
-                        NavigationStep.TransitionToBuilding(
-                            form = prevSegment.buildingNum,
-                            to = segment.buildingNum
-                        )
-                    )
-                } else if (prevSegment.floorNum != segment.floorNum) {
-                    steps.add(
-                        NavigationStep.TransitionToFlor(
-                            to = segment.floorNum,
-                            from = prevSegment.floorNum
-                        )
-                    )
+                if (prevLast is ResolvedNode.InDoor && firstNode is ResolvedNode.OutDoor) {
+                    steps.add(NavigationStep.TransitionToOutDoor(fromBuilding = prevLast.node.buildNum))
+                } else if (prevLast is ResolvedNode.OutDoor && firstNode is ResolvedNode.InDoor) {
+                    steps.add(NavigationStep.TransitionToInDoor(toBuilding = firstNode.node.buildNum))
+                } else if (prevLast is ResolvedNode.InDoor && firstNode is ResolvedNode.InDoor) {
+                    if (prevLast.node.buildNum != firstNode.node.buildNum) {
+                        steps.add(NavigationStep.TransitionToBuilding(
+                            prevLast.node.buildNum,
+                            firstNode.node.buildNum
+                        ))
+                    } else if (prevLast.node.floorNum != firstNode.node.floorNum) {
+                        steps.add(NavigationStep.TransitionToFlor(
+                            firstNode.node.floorNum,
+                            prevLast.node.floorNum
+                        ))
+                    }
                 }
             }
 
-            val building = masterNav.buildings.find { it.num == segment.buildingNum }
-            val flor = building?.flors?.find { it.num == segment.floorNum }
+            if (firstNode is ResolvedNode.InDoor) {
+                val indoorNodes = segment.mapNotNull { (it as? ResolvedNode.InDoor)?.node }
+                val buildingId = firstNode.node.buildNum
+                val floorNum = firstNode.node.floorNum
 
+                val building = masterNav.buildings.find { it.num == buildingId }
+                val flor = building?.flors?.find { it.num == floorNum }
 
-            if (flor != null) {
-                val renderData = generateFloorData(
-                    flor = flor,
-                    buildingId = segment.buildingNum,
-                    stepPath = segment.nodes,
-                    globalStart = globalStartNode,
-                    globalEnd = globalEndNode
-                )
+                if (flor != null) {
+                    val startNodeForRender = if (segment.first().id == globalStart.id) {
+                        (globalStart as? ResolvedNode.InDoor)?.node ?: indoorNodes.first()
+                    } else indoorNodes.first()
 
-                val focusPoint =
-                    renderData.startNode ?: renderData.routePath.firstOrNull() ?: Offset.Zero
+                    val endNodeForRender = if (segment.last().id == globalEnd.id) {
+                        (globalEnd as? ResolvedNode.InDoor)?.node ?: indoorNodes.last()
+                    } else indoorNodes.last()
 
-                steps.add(
-                    NavigationStep.ByFlor(
-                        flor = segment.floorNum,
-                        building = segment.buildingNum,
-                        image = renderData,
-                        pointOfInterest = focusPoint,
-                        textLabels = renderData.textLabels
+                    val renderData = generateFloorData(
+                        flor = flor,
+                        buildingId = buildingId,
+                        stepPath = indoorNodes,
+                        localStart = startNodeForRender,
+                        localEnd = endNodeForRender
                     )
-                )
+
+                    val focusPoint = renderData.startNode ?: renderData.routePath.firstOrNull() ?: Offset.Zero
+
+                    steps.add(
+                        NavigationStep.ByFlor(
+                            flor = floorNum,
+                            building = buildingId,
+                            image = renderData,
+                            pointOfInterest = focusPoint,
+                            textLabels = renderData.textLabels
+                        )
+                    )
+                }
+            } else if (firstNode is ResolvedNode.OutDoor) {
+                val coords = segment.mapNotNull { (it as? ResolvedNode.OutDoor)?.node }.map {
+                    Coordinates(it.lat, it.lon)
+                }
+                steps.add(NavigationStep.OutDoorMaps(coords))
             }
         }
 
         return steps
     }
 
-    private fun groupPathByLocation(path: List<InDoorNode>): List<PathSegment> {
-        val segments = mutableListOf<PathSegment>()
-        if (path.isEmpty()) return segments
-
-        var currentNodes = mutableListOf<InDoorNode>()
-        var (currentBuilding, currentFloor) = path.first().buildNum to path.first().floorNum
-
-        path.forEach { node ->
-            val (nodeBuilding, nodeFloor) = node.buildNum to node.floorNum
-
-            if (nodeBuilding != currentBuilding || nodeFloor != currentFloor) {
-                if (currentNodes.isNotEmpty()) {
-                    segments.add(
-                        PathSegment(
-                            currentBuilding,
-                            currentFloor,
-                            ArrayList(currentNodes)
-                        )
-                    )
-                }
-                currentNodes = mutableListOf()
-                currentBuilding = nodeBuilding
-                currentFloor = nodeFloor
-            }
-            currentNodes.add(node)
-        }
-
-        if (currentNodes.isNotEmpty()) {
-            segments.add(PathSegment(currentBuilding, currentFloor, currentNodes))
-        }
-        return segments
-    }
-
     private fun generateFloorData(
         flor: Flor,
         buildingId: Int,
         stepPath: List<InDoorNode>,
-        globalStart: InDoorNode,
-        globalEnd: InDoorNode
+        localStart: InDoorNode,
+        localEnd: InDoorNode
     ): FloorRenderData {
         val allX = mutableListOf<Double>()
         val allY = mutableListOf<Double>()
@@ -612,16 +418,16 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
         if (allX.isEmpty()) {
             return FloorRenderData(
-                width = 1f,
-                height = 1f,
-                polygons = emptyList(),
-                polylines = emptyList(),
-                singleLines = emptyList(),
-                routePath = emptyList(),
-                startNode = null,
-                endNode = null,
-                textLabels = emptyList(),
-                icons = emptyList()
+                1f,
+                1f,
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                null,
+                null,
+                emptyList(),
+                emptyList()
             )
         }
 
@@ -632,21 +438,18 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
         val dataW = maxX - minX
         val dataH = maxY - minY
-
-        if (dataW == 0.0 || dataH == 0.0) {
-            return FloorRenderData(
-                width = 1f,
-                height = 1f,
-                polygons = emptyList(),
-                polylines = emptyList(),
-                singleLines = emptyList(),
-                routePath = emptyList(),
-                startNode = null,
-                endNode = null,
-                textLabels = emptyList(),
-                icons = emptyList()
-            )
-        }
+        if (dataW == 0.0 || dataH == 0.0) return FloorRenderData(
+            1f,
+            1f,
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            null,
+            null,
+            emptyList(),
+            emptyList()
+        )
 
         val drawWidth = outputWidth * (1 - paddingPct * 2)
         val scale = drawWidth / dataW
@@ -661,11 +464,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
         flor.plan.polylines.forEach { poly ->
             val points = poly.points.map { Offset(tx(it[0]), ty(it[1])) }
-            if (poly.closed) {
-                polygons.add(points)
-            } else {
-                polylines.add(points)
-            }
+            if (poly.closed) polygons.add(points) else polylines.add(points)
         }
 
         val singleLines = flor.plan.lines.map { l ->
@@ -680,19 +479,13 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         }
 
         var startNodeOffset: Offset? = null
-        var endNodeOffset: Offset? = null
-
-        if (stepPath.isNotEmpty() && stepPath.first().id == globalStart.id) {
-            val start = stepPath.first()
-            if (!start.type.contains(NodeType.STAIRS)) {
-                startNodeOffset = Offset(tx(start.x), ty(start.y))
-            }
+        if (!localStart.type.contains(NodeType.STAIRS)) {
+            startNodeOffset = Offset(tx(localStart.x), ty(localStart.y))
         }
-        if (stepPath.isNotEmpty() && stepPath.last().id == globalEnd.id) {
-            val end = stepPath.last()
-            if (!end.type.contains(NodeType.STAIRS)) {
-                endNodeOffset = Offset(tx(end.x), ty(end.y))
-            }
+
+        var endNodeOffset: Offset? = null
+        if (!localEnd.type.contains(NodeType.STAIRS)) {
+            endNodeOffset = Offset(tx(localEnd.x), ty(localEnd.y))
         }
 
         val icons = mutableListOf<IconLabel>()
@@ -709,17 +502,14 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                     icon = Icons.Outlined.Wc
                     tint = Color(0xFF9B27AF)
                 }
-
                 node.type.contains(NodeType.WC_MAN) -> {
                     icon = Icons.Outlined.Man
                     tint = Color(0xFF4A90E2)
                 }
-
                 node.type.contains(NodeType.WC_WOMAN) -> {
                     icon = Icons.Outlined.Woman
                     tint = Color(0xFFE91E63)
                 }
-
                 node.type.contains(NodeType.MAIN_ENTRANCE) -> {
                     icon = Icons.Outlined.ExitToApp
                     tint = Color(0xFF4CAF50)
@@ -727,26 +517,13 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             }
 
             if (icon != null) {
-                icons.add(
-                    IconLabel(
-                        icon = icon,
-                        x = tx(node.x),
-                        y = ty(node.y),
-                        tint = tint
-                    )
-                )
+                icons.add(IconLabel(icon, tx(node.x), ty(node.y), tint))
             }
         }
 
         val textLabels = mutableListOf<TextLabel>()
-
         flor.plan.texts.forEach { txt ->
-            var clean = txt.text
-            val sbClean = StringBuilder()
-            for (char in clean) {
-                if (!char.isISOControl()) sbClean.append(char)
-            }
-            clean = sbClean.toString()
+            var clean = txt.text.filter { !it.isISOControl() }
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
@@ -757,17 +534,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                     clean.equals("ж", ignoreCase = true)
 
             if (clean.isNotEmpty() && !isWcText) {
-                val cx = tx(txt.x)
-                val cy = ty(txt.y)
-
-                textLabels.add(
-                    TextLabel(
-                        text = clean,
-                        x = cx,
-                        y = cy,
-                        color = "#666666"
-                    )
-                )
+                textLabels.add(TextLabel(clean, tx(txt.x), ty(txt.y), "#666666"))
             }
         }
 
@@ -783,6 +550,19 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             textLabels = textLabels,
             icons = icons
         )
+    }
+
+    private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6371000.0
+        val dLat = (lat2 - lat1) * kotlin.math.PI / 180.0
+        val dLon = (lon2 - lon1) * kotlin.math.PI / 180.0
+        val lat1Rad = lat1 * kotlin.math.PI / 180.0
+        val lat2Rad = lat2 * kotlin.math.PI / 180.0
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(lat1Rad) * cos(lat2Rad) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return r * c
     }
 
     private class MinHeap<T>(private val comparator: Comparator<T>) {
