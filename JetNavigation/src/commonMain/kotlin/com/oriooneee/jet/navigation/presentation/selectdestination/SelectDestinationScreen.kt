@@ -71,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oriooneee.jet.navigation.domain.entities.graph.InDoorNode
 import com.oriooneee.jet.navigation.domain.entities.graph.MasterNavigation
+import com.oriooneee.jet.navigation.domain.entities.graph.NavNode
 import com.oriooneee.jet.navigation.domain.entities.graph.NodeType
 import com.oriooneee.jet.navigation.domain.entities.graph.OutDoorNode
 import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
@@ -79,6 +80,7 @@ import com.oriooneee.jet.navigation.presentation.KEY_SELECTED_START_NODE
 import com.oriooneee.jet.navigation.presentation.navigation.LocalNavController
 import com.oriooneee.jet.navigation.utils.containsAny
 import kotlinx.serialization.json.Json
+
 val enterColor = Color(0xFF4CAF50).copy(alpha = 0.35f)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -162,9 +164,22 @@ fun SelectDestinationScreen(
             }
         }
     }
-
-    val mainEntranceNodes by remember(filteredNodes) {
+    val outDoorMainEnterances: List<NavNode> = masterNavigation?.outDoorNavGraph?.nodes?.filter {
+        it.type.contains(NodeType.MAIN_ENTRANCE)
+    } ?: emptyList()
+    val inDoorMainEnterances: List<NavNode> by remember(filteredNodes) {
         derivedStateOf { filteredNodes.filter { it.type.contains(NodeType.MAIN_ENTRANCE) } }
+    }
+    val mainEntranceNodes by remember(inDoorMainEnterances, outDoorMainEnterances) {
+        derivedStateOf {
+            (inDoorMainEnterances + outDoorMainEnterances)
+                .filter {
+                    it.buildNum != 0 && it.buildNum != null
+                }
+                .distinctBy { it.buildNum }
+                .sortedBy { it.buildNum }
+
+        }
     }
 
     val poiNodes by remember(filteredNodes) {
@@ -182,7 +197,10 @@ fun SelectDestinationScreen(
                 node.type.contains(NodeType.POINT_OF_INTEREST) &&
                         !node.type.contains(NodeType.TURN) &&
                         node.label != null &&
-                        (searchQuery.isEmpty() || node.label.contains(searchQuery, ignoreCase = true))
+                        (searchQuery.isEmpty() || node.label.contains(
+                            searchQuery,
+                            ignoreCase = true
+                        ))
             } ?: emptyList()
         }
     }
@@ -354,11 +372,11 @@ fun SelectDestinationScreen(
                                     mainEntranceNodes.forEach { info ->
                                         SuggestionChip(
                                             onClick = {
-                                                handleSelection(
-                                                    SelectNodeResult.SelectedNode(
-                                                        info
-                                                    )
-                                                )
+                                                if (info is InDoorNode) {
+                                                    handleSelection(SelectNodeResult.SelectedNode(info))
+                                                } else if (info is OutDoorNode) {
+                                                    handleSelection(SelectNodeResult.SelectedOutDoorNode(info))
+                                                }
                                             },
                                             label = {
                                                 Text(
@@ -412,13 +430,6 @@ fun SelectDestinationScreen(
                                                 )
                                             },
                                             label = { Text(node.label ?: node.id) },
-                                            icon = {
-                                                Icon(
-                                                    Icons.Outlined.Park,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            },
                                             colors = SuggestionChipDefaults.suggestionChipColors(
                                                 containerColor = Color(0xFF81C784).copy(alpha = 0.3f),
                                                 labelColor = Color(0xFF1B5E20),

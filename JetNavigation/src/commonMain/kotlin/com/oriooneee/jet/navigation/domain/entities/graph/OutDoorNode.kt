@@ -6,9 +6,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class OutDoorNode(
     @SerialName("id")
-    val id: String,
+    override val id: String,
     @SerialName("label")
-    val label: String? = null,
+    override val label: String? = null,
     @SerialName("type")
     private val _type: List<NodeType>? = null,
     @SerialName("lon")
@@ -17,10 +17,10 @@ data class OutDoorNode(
     val lat: Double,
     @SerialName("buildNum")
     private val _buildNum: String? = null,
-) {
-    val type: List<NodeType>
+): NavNode {
+    override val type: List<NodeType>
         get() = _type ?: if (id.contains("TURN")) listOf(NodeType.TURN) else emptyList()
 
-    val buildNum: Int?
+    override val buildNum: Int?
         get() = _buildNum?.toIntOrNull()
 }

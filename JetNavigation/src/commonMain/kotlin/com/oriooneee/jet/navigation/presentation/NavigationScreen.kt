@@ -21,10 +21,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -538,6 +538,7 @@ fun RouteSelectionBottomSheet(
                 RouteOptionItem(
                     presentation = presentation,
                     timeMinutes = route.estimatedTimeMinutes,
+                    stepCount = route.steps.size,
                     isSelected = isSelected,
                     onClick = { onRouteSelected(route) }
                 )
@@ -551,6 +552,7 @@ fun RouteSelectionBottomSheet(
 fun RouteOptionItem(
     presentation: RoutePresentation,
     timeMinutes: Double,
+    stepCount: Int,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -620,6 +622,12 @@ fun RouteOptionItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "$stepCount steps",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
             }
         }
     }

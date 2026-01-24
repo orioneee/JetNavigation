@@ -7,9 +7,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class InDoorNode(
     @SerialName("id")
-    val id: String,
+    override val id: String,
     @SerialName("label")
-    val label: String? = null,
+    override val label: String? = null,
     @SerialName("type")
     private val _type: List<NodeType>? = null,
     @SerialName("x")
@@ -22,9 +22,9 @@ data class InDoorNode(
     private val _buildNum: String,
     @SerialName("floorNum")
     val floorNum: Int
-){
-    val type: List<NodeType>
+): NavNode{
+    override val type: List<NodeType>
         get() = _type ?: if(id.contains("TURN")) listOf(NodeType.TURN) else emptyList()
-    val buildNum: Int
+    override val buildNum: Int
         get() = _buildNum.toIntOrNull() ?: 0
 }

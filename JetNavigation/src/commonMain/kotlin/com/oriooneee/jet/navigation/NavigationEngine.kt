@@ -373,7 +373,12 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
                 val prevLast = prevSegment.last()
 
                 if (prevLast is ResolvedNode.InDoor && firstNode is ResolvedNode.OutDoor) {
-                    steps.add(NavigationStep.TransitionToOutDoor(fromBuilding = prevLast.node.buildNum))
+                    val prevIndoorCount = prevSegment.count { it is ResolvedNode.InDoor }
+                    val isPrevStartSingle = (i - 1 == 0) && prevIndoorCount <= 1
+
+                    if (!isPrevStartSingle) {
+                        steps.add(NavigationStep.TransitionToOutDoor(fromBuilding = prevLast.node.buildNum))
+                    }
                 } else if (prevLast is ResolvedNode.OutDoor && firstNode is ResolvedNode.InDoor) {
                     val skipTransition = (i == segments.lastIndex && isSingleIndoorPoint)
                     if (!skipTransition) {
