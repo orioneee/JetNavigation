@@ -90,8 +90,6 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
     init {
         Log.d(TAG, "NavigationEngine INIT (Unified Graph)")
-        Log.d(TAG, "Total nodes: ${inDoorNodesMap.size + outDoorNodesMap.size}")
-        Log.d(TAG, "Total connections: ${globalAdjacency.values.sumOf { it.size }}")
     }
 
     private fun buildGlobalAdjacencyMap(): Map<String, List<Pair<String, Double>>> {
@@ -162,24 +160,67 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         }
     }
 
-    fun getRoute(from: InDoorNode, to: InDoorNode): NavigationDirection {
+    fun getRoute(from: InDoorNode, to: InDoorNode): List<NavigationDirection> {
         return getRoute(ResolvedNode.InDoor(from), ResolvedNode.InDoor(to))
     }
 
-    fun getRoute(from: ResolvedNode, to: ResolvedNode): NavigationDirection {
-        Log.d(TAG, "getRoute: ${from.id} -> ${to.id}")
+    fun getRoute(from: ResolvedNode, to: ResolvedNode): List<NavigationDirection> {
+        val allPaths = mutableListOf<List<String>>()
 
-        val pathIds = findPathGlobal(from.id, to.id)
-        if (pathIds == null) {
-            Log.e(TAG, "No path found")
-            return NavigationDirection(emptyList(), 0.0)
+        val standardPath = findPathVariant(from.id, to.id) { _, _ -> 1.0 }
+        if (standardPath != null) allPaths.add(standardPath)
+
+        val indoorPreferredPath = findPathVariant(from.id, to.id) { u, v ->
+            if (outDoorNodesMap.containsKey(u) || outDoorNodesMap.containsKey(v)) 50.0 else 1.0
+        }
+        if (indoorPreferredPath != null) allPaths.add(indoorPreferredPath)
+
+        val outdoorPreferredPath = findPathVariant(from.id, to.id) { u, v ->
+            if (inDoorNodesMap.containsKey(u) && inDoorNodesMap.containsKey(v)) 50.0 else 1.0
+        }
+        if (outdoorPreferredPath != null) allPaths.add(outdoorPreferredPath)
+
+        if (allPaths.size < 4 && standardPath != null) {
+            val standardEdges = standardPath.zipWithNext().toSet()
+            val alternativePath = findPathVariant(from.id, to.id) { u, v ->
+                if (standardEdges.contains(u to v) || standardEdges.contains(v to u)) 3.0 else 1.0
+            }
+            if (alternativePath != null) allPaths.add(alternativePath)
         }
 
-        val resolvedPath = pathIds.mapNotNull { resolveNodeById(it) }
-        val totalDistance = calculateTotalDistanceGlobal(resolvedPath)
-        val steps = buildStepsFromUnifiedPath(resolvedPath)
+        val uniquePaths = allPaths.distinct()
+        val pathResults = uniquePaths.map { pathIds ->
+            val resolvedPath = pathIds.mapNotNull { resolveNodeById(it) }
+            val distance = calculateTotalDistanceGlobal(resolvedPath)
+            val steps = buildStepsFromUnifiedPath(resolvedPath)
+            val isOutdoorHeavy = resolvedPath.any { it is ResolvedNode.OutDoor }
+            Triple(NavigationDirection(steps, distance), distance, isOutdoorHeavy)
+        }
 
-        return NavigationDirection(steps, totalDistance)
+        val sorted = pathResults.sortedBy { it.second }
+        if (sorted.isEmpty()) return emptyList()
+
+        val resultDirections = mutableListOf<NavigationDirection>()
+        val maxItems = 4
+
+        val outdoorHeavyPaths = sorted.filter { it.third }
+        val indoorHeavyPaths = sorted.filter { !it.third }
+
+        if (outdoorHeavyPaths.isNotEmpty() && indoorHeavyPaths.isNotEmpty()) {
+            val primary = if (sorted.first().third) outdoorHeavyPaths else indoorHeavyPaths
+            val secondary = if (sorted.first().third) indoorHeavyPaths else outdoorHeavyPaths
+
+            resultDirections.addAll(primary.take(maxItems - 1).map { it.first })
+
+            val remainingSlots = maxItems - resultDirections.size
+            if (remainingSlots > 0) {
+                resultDirections.addAll(secondary.take(remainingSlots).map { it.first })
+            }
+        } else {
+            resultDirections.addAll(sorted.take(maxItems).map { it.first })
+        }
+
+        return resultDirections.sortedBy { it.totalDistanceMeters }
     }
 
     private fun findNearestNodeGlobal(
@@ -218,7 +259,11 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         return null
     }
 
-    private fun findPathGlobal(startId: String, endId: String): List<String>? {
+    private fun findPathVariant(
+        startId: String,
+        endId: String,
+        costModifier: (String, String) -> Double
+    ): List<String>? {
         val distances = mutableMapOf<String, Double>()
         val previous = mutableMapOf<String, String>()
         val pq = MinHeap<Pair<String, Double>> { a, b -> a.second.compareTo(b.second) }
@@ -237,7 +282,10 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             if (d > (distances[u] ?: Double.MAX_VALUE)) continue
             if (u == endId) break
 
-            globalAdjacency[u]?.forEach { (v, weight) ->
+            globalAdjacency[u]?.forEach { (v, baseWeight) ->
+                val modifier = costModifier(u, v)
+                val weight = baseWeight * modifier
+
                 val alt = d + weight
                 if (alt < (distances[v] ?: Double.MAX_VALUE)) {
                     distances[v] = alt
@@ -343,40 +391,48 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
 
             if (firstNode is ResolvedNode.InDoor) {
                 val indoorNodes = segment.mapNotNull { (it as? ResolvedNode.InDoor)?.node }
-                val buildingId = firstNode.node.buildNum
-                val floorNum = firstNode.node.floorNum
 
-                val building = masterNav.buildings.find { it.num == buildingId }
-                val flor = building?.flors?.find { it.num == floorNum }
+                val isTrivial = indoorNodes.size < 2
+                val hasNextSegment = i < segments.lastIndex
+                val nextIsOutdoor = hasNextSegment && segments[i + 1].first() is ResolvedNode.OutDoor
 
-                if (flor != null) {
-                    val startNodeForRender = if (segment.first().id == globalStart.id) {
-                        (globalStart as? ResolvedNode.InDoor)?.node ?: indoorNodes.first()
-                    } else indoorNodes.first()
+                if (!isTrivial || !nextIsOutdoor) {
+                    val buildingId = firstNode.node.buildNum
+                    val floorNum = firstNode.node.floorNum
 
-                    val endNodeForRender = if (segment.last().id == globalEnd.id) {
-                        (globalEnd as? ResolvedNode.InDoor)?.node ?: indoorNodes.last()
-                    } else indoorNodes.last()
+                    val building = masterNav.buildings.find { it.num == buildingId }
+                    val flor = building?.flors?.find { it.num == floorNum }
 
-                    val renderData = generateFloorData(
-                        flor = flor,
-                        buildingId = buildingId,
-                        stepPath = indoorNodes,
-                        localStart = startNodeForRender,
-                        localEnd = endNodeForRender
-                    )
+                    if (flor != null) {
+                        val startNodeForRender = if (segment.first().id == globalStart.id) {
+                            (globalStart as? ResolvedNode.InDoor)?.node ?: indoorNodes.first()
+                        } else indoorNodes.first()
 
-                    val focusPoint = renderData.startNode ?: renderData.routePath.firstOrNull() ?: Offset.Zero
+                        val endNodeForRender = if (segment.last().id == globalEnd.id) {
+                            (globalEnd as? ResolvedNode.InDoor)?.node ?: indoorNodes.last()
+                        } else indoorNodes.last()
 
-                    steps.add(
-                        NavigationStep.ByFlor(
-                            flor = floorNum,
-                            building = buildingId,
-                            image = renderData,
-                            pointOfInterest = focusPoint,
-                            textLabels = renderData.textLabels
+                        val renderData = generateFloorData(
+                            flor = flor,
+                            buildingId = buildingId,
+                            stepPath = indoorNodes,
+                            localStart = startNodeForRender,
+                            localEnd = endNodeForRender
                         )
-                    )
+
+                        val focusPoint =
+                            renderData.startNode ?: renderData.routePath.firstOrNull() ?: Offset.Zero
+
+                        steps.add(
+                            NavigationStep.ByFlor(
+                                flor = floorNum,
+                                building = buildingId,
+                                image = renderData,
+                                pointOfInterest = focusPoint,
+                                textLabels = renderData.textLabels
+                            )
+                        )
+                    }
                 }
             } else if (firstNode is ResolvedNode.OutDoor) {
                 val coords = segment.mapNotNull { (it as? ResolvedNode.OutDoor)?.node }.map {

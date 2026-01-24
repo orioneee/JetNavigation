@@ -47,20 +47,26 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.outlined.Apartment
+import androidx.compose.material.icons.outlined.DirectionsRun
+import androidx.compose.material.icons.outlined.NaturePeople
 import androidx.compose.material.icons.outlined.Park
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -86,6 +92,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -102,8 +109,6 @@ import com.oriooneee.jet.navigation.TextLabel
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 import com.oriooneee.jet.navigation.ResolvedNode
-import com.oriooneee.jet.navigation.buildconfig.BuildConfig
-import com.oriooneee.jet.navigation.domain.entities.graph.InDoorNode
 import com.oriooneee.jet.navigation.presentation.navigation.LocalNavController
 import com.oriooneee.jet.navigation.presentation.navigation.Route
 import kotlinx.coroutines.launch
@@ -198,7 +203,59 @@ class ZoomState(private val minScale: Float, private val maxScale: Float) {
 const val KEY_SELECTED_START_NODE = "selected_start_node"
 const val KEY_SELECTED_END_NODE = "selected_end_node"
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalAnimationApi::class)
+data class RoutePresentation(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val color: Color
+)
+
+private fun generatePathSummary(steps: List<NavigationStep>): String {
+    val parts = mutableListOf<String>()
+
+    steps.forEach { step ->
+        val part = when (step) {
+            is NavigationStep.OutDoorMaps -> "Street"
+            is NavigationStep.ByFlor -> "${step.building}"
+            else -> null
+        }
+
+        if (part != null && parts.lastOrNull() != part) {
+            parts.add(part)
+        }
+    }
+
+    if (parts.isEmpty()) return "Direct Route"
+    if (parts.size == 1 && parts.first() != "Street") return "Building ${parts.first()} Only"
+
+    return parts.joinToString(" → ")
+}
+
+@Composable
+fun getRoutePresentation(route: NavigationDirection, isFastest: Boolean): RoutePresentation {
+    val summary = generatePathSummary(route.steps)
+    val isPureOutdoor = route.steps.all { it is NavigationStep.OutDoorMaps || it is NavigationStep.TransitionToOutDoor }
+    val hasOutdoor = route.steps.any { it is NavigationStep.OutDoorMaps }
+
+    return when {
+        isPureOutdoor -> RoutePresentation(
+            title = "Via Streets",
+            subtitle = "Outdoor route • ${route.totalDistanceMeters.toInt()}m",
+            icon = Icons.Outlined.WbSunny,
+            color = Color(0xFFE65100)
+        )
+        else -> RoutePresentation(
+            title = summary,
+            subtitle = if (isFastest) "Fastest • ${route.totalDistanceMeters.toInt()}m" else "${route.totalDistanceMeters.toInt()}m",
+            icon = if (hasOutdoor) Icons.Outlined.NaturePeople else Icons.Outlined.Apartment,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalAnimationApi::class,
+    ExperimentalMaterial3Api::class
+)
 @Composable
 fun NavigationScreen(
     viewModel: NavigationViewModel,
@@ -212,6 +269,8 @@ fun NavigationScreen(
     val startNodeColor = MaterialTheme.colorScheme.primary
     val endNodeColor = MaterialTheme.colorScheme.primary
     val navController = LocalNavController.current
+
+    var showRouteSelection by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         navController.currentBackStackEntryFlow.collect {
@@ -418,9 +477,148 @@ fun NavigationScreen(
                             },
                             onSwapNodes = viewModel::swapNodes,
                             isExpanded = isPanelExpanded,
-                            isVertical = !isLargeScreen
+                            isVertical = !isLargeScreen,
+                            availableRoutesCount = uiState.availableRoutes.size,
+                            onOpenRouteSelection = { showRouteSelection = true }
                         )
                     }
+                }
+            }
+        }
+
+        if (showRouteSelection && uiState.availableRoutes.size > 1) {
+            RouteSelectionBottomSheet(
+                routes = uiState.availableRoutes,
+                selectedRoute = uiState.routeStats,
+                onRouteSelected = { route ->
+                    viewModel.selectRoute(route)
+                    showRouteSelection = false
+                },
+                onDismiss = { showRouteSelection = false }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RouteSelectionBottomSheet(
+    routes: List<NavigationDirection>,
+    selectedRoute: NavigationDirection?,
+    onRouteSelected: (NavigationDirection) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 8.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Choose a Route",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp, start = 8.dp)
+            )
+
+            val sortedForCheck = remember(routes) { routes.sortedBy { it.totalDistanceMeters } }
+
+            routes.forEachIndexed { _, route ->
+                val isSelected = route == selectedRoute
+                val isFastest = route == sortedForCheck.first()
+                val presentation = getRoutePresentation(route, isFastest)
+
+                RouteOptionItem(
+                    presentation = presentation,
+                    timeMinutes = route.estimatedTimeMinutes,
+                    isSelected = isSelected,
+                    onClick = { onRouteSelected(route) }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun RouteOptionItem(
+    presentation: RoutePresentation,
+    timeMinutes: Double,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor = if (isSelected)
+        MaterialTheme.colorScheme.primaryContainer
+    else
+        MaterialTheme.colorScheme.surfaceContainerHigh
+
+    val borderModifier = if (isSelected) {
+        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+    } else Modifier
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = backgroundColor,
+        modifier = Modifier.fillMaxWidth().then(borderModifier)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(presentation.color.copy(alpha = 0.15f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = presentation.icon,
+                    contentDescription = null,
+                    tint = presentation.color,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = presentation.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = presentation.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                val mins = timeMinutes.toInt()
+                val secs = ((timeMinutes - mins) * 60).toInt()
+
+                Text(
+                    text = "$mins min",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (secs > 0) {
+                    Text(
+                        text = "$secs s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -453,13 +651,11 @@ fun DestinationInputPanel(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Левая часть с точками и линией
                 Box(
                     modifier = Modifier
                         .width(32.dp)
                         .height(96.dp)
                 ) {
-                    // Вертикальная линия
                     Box(
                         modifier = Modifier
                             .width(2.dp)
@@ -471,7 +667,6 @@ fun DestinationInputPanel(
                             )
                     )
 
-                    // Верхняя точка (начало)
                     Box(
                         modifier = Modifier
                             .size(12.dp)
@@ -575,7 +770,7 @@ fun DestinationInputPanel(
                     ) {
                         Icon(
                             Icons.Default.SwapVert,
-                            contentDescription = "Поменять местами",
+                            contentDescription = "Swap",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(24.dp)
                         )
@@ -655,39 +850,71 @@ fun NavigationControls(
     onSelectStart: () -> Unit,
     onSelectEnd: () -> Unit,
     onSwapNodes: () -> Unit,
-    isVertical: Boolean
+    isVertical: Boolean,
+    availableRoutesCount: Int,
+    onOpenRouteSelection: () -> Unit
 ) {
     @Composable
     fun RouteStats() {
         routeStats?.let { stats ->
-            Row(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .background(
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                        RoundedCornerShape(12.dp)
-                    )
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                onClick = { if (availableRoutesCount > 1) onOpenRouteSelection() }
             ) {
-                Column {
-                    val mins = stats.estimatedTimeMinutes.toInt()
-                    val secs = ((stats.estimatedTimeMinutes - mins) * 60).toInt()
-                    Text(
-                        text = "$mins min $secs sec",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "~${stats.totalDistanceMeters.toInt()} meters",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (availableRoutesCount > 1) {
+                            Icon(
+                                imageVector = Icons.Default.SwapVert,
+                                contentDescription = "Change route",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(MaterialTheme.colorScheme.surface.copy(0.5f), CircleShape)
+                                    .padding(4.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                        }
+
+                        Column {
+                            val mins = stats.estimatedTimeMinutes.toInt()
+                            val secs = ((stats.estimatedTimeMinutes - mins) * 60).toInt()
+
+                            val typeTitle = getRoutePresentation(stats, false).title
+
+                            Text(
+                                text = "$mins min $secs sec",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (availableRoutesCount > 1) {
+                                    Text(
+                                        text = "$typeTitle • ",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Text(
+                                    text = "~${stats.totalDistanceMeters.toInt()} meters",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    Icon(Icons.Default.Timer, null, tint = MaterialTheme.colorScheme.primary)
                 }
-                Icon(Icons.Default.Timer, null, tint = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -1249,10 +1476,9 @@ fun TransitionToBuildingScreen(
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Откуда
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    imageVector = Icons.Default.LocationCity, // или Domain
+                    imageVector = Icons.Default.LocationCity,
                     contentDescription = null,
                     modifier = Modifier.size(64.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1266,7 +1492,6 @@ fun TransitionToBuildingScreen(
                 )
             }
 
-            // Стрелка / Ходьба
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(horizontal = 24.dp)
@@ -1296,12 +1521,11 @@ fun TransitionToBuildingScreen(
                 )
             }
 
-            // Куда
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     imageVector = Icons.Default.LocationCity,
                     contentDescription = null,
-                    modifier = Modifier.size(80.dp), // Чуть больше, так как это цель
+                    modifier = Modifier.size(80.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(8.dp))

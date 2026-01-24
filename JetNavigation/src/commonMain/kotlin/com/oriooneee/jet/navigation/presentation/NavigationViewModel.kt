@@ -25,6 +25,7 @@ data class NavigationUiState(
     val navigationSteps: List<NavigationStep> = emptyList(),
     val currentStepIndex: Int = 0,
     val routeStats: NavigationDirection? = null,
+    val availableRoutes: List<NavigationDirection> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null
 ) {
@@ -57,7 +58,6 @@ class NavigationViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true) }
 
             try {
-
                 val engine = NavigationEngine(MasterNavigation.loadFromAssets())
                 navigationEngine.value = engine
                 _uiState.update {
@@ -84,6 +84,7 @@ class NavigationViewModel : ViewModel() {
                             startNode = resolvedNode,
                             navigationSteps = emptyList(),
                             routeStats = null,
+                            availableRoutes = emptyList(),
                             currentStepIndex = 0,
                             error = null
                         )
@@ -111,6 +112,7 @@ class NavigationViewModel : ViewModel() {
                             endNode = resolvedNode,
                             navigationSteps = emptyList(),
                             routeStats = null,
+                            availableRoutes = emptyList(),
                             currentStepIndex = 0,
                             error = null
                         )
@@ -135,6 +137,7 @@ class NavigationViewModel : ViewModel() {
                 endNode = currentStart,
                 navigationSteps = emptyList(),
                 routeStats = null,
+                availableRoutes = emptyList(),
                 currentStepIndex = 0
             )
         }
@@ -143,25 +146,41 @@ class NavigationViewModel : ViewModel() {
         }
     }
 
+    fun selectRoute(route: NavigationDirection) {
+        _uiState.update {
+            it.copy(
+                navigationSteps = route.steps,
+                routeStats = route,
+                currentStepIndex = 0
+            )
+        }
+    }
+
     private fun calculateRoute() {
         val start = uiState.value.startNode ?: return
         val end = uiState.value.endNode ?: return
 
         viewModelScope.launch(Dispatchers.Default) {
-            _uiState.update { it.copy(isLoading = true, navigationSteps = emptyList()) }
+            _uiState.update { it.copy(isLoading = true, navigationSteps = emptyList(), availableRoutes = emptyList()) }
 
             try {
                 val engine = navigationEngine.filterNotNull().first()
-                val result = engine.getRoute(from = start, to = end)
+                val routes = engine.getRoute(from = start, to = end)
 
                 withContext(Dispatchers.Main) {
-                    _uiState.update {
-                        it.copy(
-                            navigationSteps = result.steps,
-                            routeStats = result,
-                            currentStepIndex = 0,
-                            isLoading = false
-                        )
+                    if (routes.isNotEmpty()) {
+                        val bestRoute = routes.first()
+                        _uiState.update {
+                            it.copy(
+                                availableRoutes = routes,
+                                navigationSteps = bestRoute.steps,
+                                routeStats = bestRoute,
+                                currentStepIndex = 0,
+                                isLoading = false
+                            )
+                        }
+                    } else {
+                        _uiState.update { it.copy(isLoading = false, error = "No route found") }
                     }
                 }
             } catch (e: Exception) {
