@@ -52,7 +52,7 @@ actual fun MapComponent(
     }
 
     val mapHtml = remember(pathPointsJson, isDarkTheme) {
-        getMapboxHtml(BuildConfig.MAPS_API_KEY, pathPointsJson, true)
+        getMapboxHtml(BuildConfig.MAPS_API_KEY, pathPointsJson, isDarkTheme)
     }
 
     LaunchedEffect(Unit) {
