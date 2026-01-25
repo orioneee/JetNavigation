@@ -136,13 +136,16 @@ buildConfig {
     packageName("com.oriooneee.jet.navigation.buildconfig")
 
     val mapsApiKey = providers.provider {
-        rootProject.file("local.properties")
-            .takeIf { it.exists() }
-            ?.readLines()
-            ?.firstOrNull { it.startsWith("MAPS_API_KEY=") }
-            ?.substringAfter("=")
+        System.getenv("MAPS_API_KEY")
+            ?: rootProject.file("local.properties")
+                .takeIf { it.exists() }
+                ?.readLines()
+                ?.firstOrNull { it.startsWith("MAPS_API_KEY=") }
+                ?.substringAfter("=")
             ?: ""
     }.getOrElse("")
+    println("MAPS_API_KEY is set: ${mapsApiKey.length}")
 
-    buildConfigField<String>("MAPS_API_KEY", mapsApiKey)
+    buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
 }
+
