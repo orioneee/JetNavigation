@@ -30,6 +30,7 @@ dependencyResolutionManagement {
         maven {
             url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
         }
+        maven("https://jogamp.org/deployment/maven")
 
     }
 }

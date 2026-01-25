@@ -15,3 +15,6 @@ Pods/
 *.jks
 *.gpg
 *yarn.lock
+/sample/composeApp/.kcef/**
+/sample/composeApp/cache/**
+/sample/composeApp/kcef-bundle/**

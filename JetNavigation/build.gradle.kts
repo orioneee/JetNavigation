@@ -47,6 +47,9 @@ kotlin {
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)
 
+            api("io.github.kevinnzou:compose-webview-multiplatform:2.0.3")
+
+
         }
 
         commonTest.dependencies {
@@ -66,6 +69,7 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.ktor.client.okhttp)
+
         }
 
         iosMain.dependencies {

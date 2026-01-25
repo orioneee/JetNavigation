@@ -84,5 +84,11 @@ compose.desktop {
             packageName = "sample"
             packageVersion = "1.0.0"
         }
+        jvmArgs += listOf(
+            "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
+            "--add-opens=java.desktop/java.awt.event=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED" // Обязательно для macOS (судя по твоему логу)
+        )
     }
 }

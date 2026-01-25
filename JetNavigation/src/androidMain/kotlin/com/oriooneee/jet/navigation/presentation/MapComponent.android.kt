@@ -1,37 +1,23 @@
 package com.oriooneee.jet.navigation.presentation
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalDensity
-import com.mapbox.common.MapboxOptions
-import com.mapbox.geojson.LineString
-import com.mapbox.geojson.Point
-import com.mapbox.maps.EdgeInsets
-import com.mapbox.maps.MapboxMap
-import com.mapbox.maps.extension.compose.ComposeMapInitOptions
-import com.mapbox.maps.extension.compose.MapEffect
-import com.mapbox.maps.extension.compose.MapboxMap
-import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
-import com.mapbox.maps.extension.compose.annotation.generated.CircleAnnotationGroup
-import com.mapbox.maps.extension.compose.annotation.generated.PolylineAnnotation
-import com.mapbox.maps.extension.compose.rememberMapState
-import com.mapbox.maps.extension.compose.style.projection.generated.Projection
-import com.mapbox.maps.extension.compose.style.standard.LightPresetValue
-import com.mapbox.maps.extension.compose.style.standard.MapboxStandardStyle
-import com.mapbox.maps.extension.compose.style.standard.ThemeValue
-import com.mapbox.maps.extension.style.layers.properties.generated.LineJoin
-import com.mapbox.maps.plugin.annotation.generated.CircleAnnotationOptions
-import com.mapbox.maps.plugin.gestures.generated.GesturesSettings
-import com.oriooneee.jet.navigation.buildconfig.BuildConfig
+import com.multiplatform.webview.web.LoadingState
+import com.multiplatform.webview.web.WebView
+import com.multiplatform.webview.web.rememberWebViewStateWithHTMLData
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import dev.datlag.kcef.KCEF
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 actual fun MapComponent(
@@ -39,113 +25,182 @@ actual fun MapComponent(
     step: NavigationStep.OutDoorMaps?,
     isDarkTheme: Boolean
 ) {
-    MapboxOptions.accessToken = BuildConfig.MAPS_API_KEY
+    var isInitialized by remember { mutableStateOf(false) }
+    var initializationError by remember { mutableStateOf<String?>(null) }
 
-    val routePoints = remember(step) {
-        step?.path?.map { Point.fromLngLat(it.longitude, it.latitude) } ?: emptyList()
+    val mapboxAccessToken = "YOUR_MAPBOX_ACCESS_TOKEN_HERE"
+
+    val coordinatesJson = remember(step) {
+        step?.path?.joinToString(prefix = "[", postfix = "]") {
+            "[${it.longitude}, ${it.latitude}]"
+        } ?: "[]"
     }
 
-    val mapState = rememberMapState {
-        gesturesSettings = GesturesSettings {
-            rotateEnabled = false
-            pitchEnabled = false
-        }
-    }
-    val mapboxMapFlow = remember {
-        MutableStateFlow<MapboxMap?>(null)
-    }
-    val scope = rememberCoroutineScope()
-    val viewportState = rememberMapViewportState {
-        scope.launch {
-            val mapboxMap = mapboxMapFlow.filterNotNull().first()
-            if (routePoints.size >= 2) {
-                val geometry = LineString.fromLngLats(routePoints)
-                setCameraOptions(
-                    mapboxMap.cameraForGeometry(
-                        geometry = geometry,
-                        bearing = 18.5,
-                        geometryPadding = EdgeInsets(100.0, 100.0, 100.0, 100.0)
-                    )
+    val mapStyle = if (isDarkTheme) "mapbox://styles/mapbox/dark-v11" else "mapbox://styles/mapbox/streets-v12"
+    val googleBlue = "#4285F4"
+    val whiteColor = "#FFFFFF"
+
+    val mapboxHtml = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <title>Mapbox</title>
+        <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+        <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet">
+        <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
+        <style>
+            body { margin: 0; padding: 0; }
+            #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+            .marker-start {
+                background-color: $googleBlue;
+                border: 2px solid $whiteColor;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                box-shadow: 0 0 2px rgba(0,0,0,0.3);
+            }
+            .marker-end {
+                background-color: $whiteColor;
+                border: 2px solid $googleBlue;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                box-shadow: 0 0 2px rgba(0,0,0,0.3);
+            }
+        </style>
+        </head>
+        <body>
+        <div id="map"></div>
+        <script>
+            mapboxgl.accessToken = '$mapboxAccessToken';
+            
+            const coordinates = $coordinatesJson;
+            
+            // Если координат нет, ставим дефолт (Москва)
+            const center = coordinates.length > 0 ? coordinates[0] : [37.6173, 55.7558];
+
+            const map = new mapboxgl.Map({
+                container: 'map',
+                style: '$mapStyle',
+                center: center,
+                zoom: 15,
+                pitch: 0,
+                bearing: 0,
+                dragRotate: false, 
+                touchPitch: false
+            });
+
+            map.on('load', () => {
+                if (coordinates.length >= 2) {
+                    
+                    map.addSource('route', {
+                        'type': 'geojson',
+                        'data': {
+                            'type': 'Feature',
+                            'properties': {},
+                            'geometry': {
+                                'type': 'LineString',
+                                'coordinates': coordinates
+                            }
+                        }
+                    });
+
+                    map.addLayer({
+                        'id': 'route',
+                        'type': 'line',
+                        'source': 'route',
+                        'layout': {
+                            'line-join': 'round',
+                            'line-cap': 'round'
+                        },
+                        'paint': {
+                            'line-color': '$googleBlue',
+                            'line-width': 8
+                        }
+                    });
+
+                    // Start Marker (Blue with White border)
+                    const elStart = document.createElement('div');
+                    elStart.className = 'marker-start';
+                    new mapboxgl.Marker(elStart)
+                        .setLngLat(coordinates[0])
+                        .addTo(map);
+
+                    // End Marker (White with Blue border)
+                    const elEnd = document.createElement('div');
+                    elEnd.className = 'marker-end';
+                    new mapboxgl.Marker(elEnd)
+                        .setLngLat(coordinates[coordinates.length - 1])
+                        .addTo(map);
+
+                    // Fit Bounds with padding
+                    const bounds = new mapboxgl.LngLatBounds();
+                    coordinates.forEach(coord => bounds.extend(coord));
+                    map.fitBounds(bounds, {
+                        padding: 100
+                    });
+                }
+            });
+        </script>
+        </body>
+        </html>
+    """.trimIndent()
+
+    LaunchedEffect(Unit) {
+        try {
+            withContext(Dispatchers.IO) {
+                KCEF.init(
+                    builder = {
+                        installDir(File("kcef-bundle"))
+                        settings {
+                            cachePath = File("cache").absolutePath
+                        }
+                    },
+                    onError = {
+                        it?.printStackTrace()
+                        initializationError = it?.localizedMessage
+                    }
                 )
             }
-        }
-    }
-    val googleBlue = Color(0xFF4285F4)
-    val routeBorderColor = Color(0xFF1558B0)
-    val whiteColor = Color.White
-
-    val circleAnnotations = remember(routePoints) {
-        if (routePoints.size >= 2) {
-            listOf(
-                CircleAnnotationOptions()
-                    .withPoint(routePoints.first())
-                    .withCircleRadius(4.0)
-                    .withCircleStrokeWidth(2.0)
-                    .withCircleColor(googleBlue.toArgb())
-                    .withCircleStrokeColor(whiteColor.toArgb())
-                    ,
-                CircleAnnotationOptions()
-                    .withPoint(routePoints.last())
-                    .withCircleRadius(4.0)
-                    .withCircleStrokeWidth(2.0)
-                    .withCircleColor(whiteColor.toArgb())
-                    .withCircleStrokeColor(googleBlue.toArgb())
-            )
-        } else {
-            emptyList()
+            withContext(Dispatchers.Main) {
+                isInitialized = true
+            }
+        } catch (e: Exception) {
+            initializationError = e.localizedMessage
         }
     }
 
-    MapboxMap(
-        modifier = modifier,
-        mapState = mapState,
-        mapViewportState = viewportState,
-        compass = {},
-        scaleBar = {},
-        attribution = {},
-        logo = {},
-        composeMapInitOptions = with(LocalDensity.current) {
-            ComposeMapInitOptions(density, textureView = true)
-        },
-        style = {
-            MapboxStandardStyle(
-                init = {
-                    theme = ThemeValue.MONOCHROME
-                    lightPreset = if (isDarkTheme) {
-                        LightPresetValue.NIGHT
-                    } else {
-                        LightPresetValue.DAY
-                    }
-                },
-                topSlot = {
-                    if (routePoints.size >= 2) {
-                        PolylineAnnotation(points = routePoints) {
-                            lineWidth = 8.0
-                            lineJoin = LineJoin.ROUND
-                            lineColor = routeBorderColor
-                            lineEmissiveStrength = 1.0
-                        }
-
-                        PolylineAnnotation(points = routePoints) {
-                            lineWidth = 8.0
-                            lineJoin = LineJoin.ROUND
-                            lineColor = googleBlue
-                            lineEmissiveStrength = 1.0
-                        }
-
-                        CircleAnnotationGroup(
-                            annotations = circleAnnotations
-                        ){
-                            circleEmissiveStrength = 1.0
-                        }
-                    }
-                },
-                projection = Projection.MERCATOR,
-            )
+    if (initializationError != null) {
+        Text("Error: $initializationError")
+    } else if (!isInitialized) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("Initializing Map Engine...")
+            Spacer(Modifier.weight(1f))
+            CircularProgressIndicator()
         }
-    ) {
-        MapEffect {
-            mapboxMapFlow.value = it.mapboxMap
+    } else {
+        Column(modifier = modifier) {
+            val state = rememberWebViewStateWithHTMLData(
+                data = mapboxHtml
+            )
+
+            val loadingState = state.loadingState
+            if (loadingState is LoadingState.Loading) {
+                LinearProgressIndicator(
+                    progress = loadingState.progress,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            WebView(
+                state = state,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
         }
     }
 }
