@@ -32,6 +32,8 @@ kotlin {
             implementation(compose.runtime)
             implementation(compose.ui)
             implementation(compose.foundation)
+            implementation(compose.material3)
+
             implementation(project(":JetNavigation"))
         }
 
@@ -65,7 +67,7 @@ android {
     buildTypes {
         debug {
             isDebuggable = false
-            isMinifyEnabled = true
+//            isMinifyEnabled = true
         }
         release {
             isMinifyEnabled = true

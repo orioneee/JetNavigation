@@ -249,6 +249,12 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             }
 
             globalAdjacency[u]?.forEach { (v, weight) ->
+                // Skip auditoriums unless they match our search criteria
+                val resolvedV = resolveNodeById(v)
+                if (isDestinationOnlyNode(v, startId, startId) && (resolvedV == null || !criteria(resolvedV))) {
+                    return@forEach
+                }
+
                 val alt = d + weight
                 if (alt < (distances[v] ?: Double.MAX_VALUE)) {
                     distances[v] = alt
@@ -283,6 +289,9 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             if (u == endId) break
 
             globalAdjacency[u]?.forEach { (v, baseWeight) ->
+                // Skip auditoriums unless it's the target or has matching room number
+                if (v != endId && isDestinationOnlyNode(v, startId, endId)) return@forEach
+
                 val modifier = costModifier(u, v)
                 val weight = baseWeight * modifier
 
@@ -326,6 +335,27 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         inDoorNodesMap[id]?.let { return ResolvedNode.InDoor(it) }
         outDoorNodesMap[id]?.let { return ResolvedNode.OutDoor(it) }
         return null
+    }
+
+    /**
+     * Returns true if this node should only be visited as a destination (start/end),
+     * not as an intermediate waypoint. Only auditoriums are restricted.
+     *
+     * Exception: auditoriums with matching room numbers (digits only) to start/end are allowed.
+     */
+    private fun isDestinationOnlyNode(nodeId: String, startId: String, endId: String): Boolean {
+        val indoorNode = inDoorNodesMap[nodeId] ?: return false
+        if (!indoorNode.type.contains(NodeType.AUDITORIUM)) return false
+
+        val nodeDigits = nodeId.filter { it.isDigit() }
+        if (nodeDigits.isNotEmpty()) {
+            val startDigits = startId.filter { it.isDigit() }
+            val endDigits = endId.filter { it.isDigit() }
+            if (nodeDigits == startDigits || nodeDigits == endDigits) {
+                return false
+            }
+        }
+        return true
     }
 
     private fun buildStepsFromUnifiedPath(path: List<ResolvedNode>): List<NavigationStep> {

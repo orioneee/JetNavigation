@@ -9,12 +9,14 @@ import androidx.compose.ui.Modifier
 import com.oriooneee.jet.navigation.presentation.navigation.NavigationApp
 
 @Composable
-fun App() {
+fun App(
+    isDarkTheme: Boolean = false
+) {
     Box(
         modifier = Modifier
             .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        NavigationApp(false)
+        NavigationApp(isDarkTheme)
     }
 }

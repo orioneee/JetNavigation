@@ -347,10 +347,7 @@ fun NavigationScreen(
                         )
 
                         if (currentStep != null) {
-                            MapComponent(
-                                step = currentStep as? NavigationStep.OutDoorMaps,
-                                isDarkTheme = isDarkTheme
-                            )
+
                             AnimatedContent(
                                 targetState = currentStep,
                                 transitionSpec = {
@@ -387,12 +384,10 @@ fun NavigationScreen(
                                     }
 
                                     is NavigationStep.OutDoorMaps -> {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize()
-                                        ){
-
-                                        }
-
+                                        MapComponent(
+                                            step = step,
+                                            isDarkTheme = isDarkTheme
+                                        )
                                     }
                                     is NavigationStep.TransitionToInDoor -> {
                                         TransitionToInDoorScreen(toBuilding = step.toBuilding)

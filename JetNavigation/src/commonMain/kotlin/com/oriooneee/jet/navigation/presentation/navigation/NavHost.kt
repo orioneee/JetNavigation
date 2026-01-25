@@ -35,7 +35,7 @@ fun NavigationApp(
     CompositionLocalProvider(
         LocalNavController provides navController
     ) {
-        MaterialTheme {
+
             NavHost(
                 navController = navController,
                 startDestination = Route.NavigationScreen
@@ -85,6 +85,5 @@ fun NavigationApp(
                     }
                 }
             }
-        }
     }
 }
