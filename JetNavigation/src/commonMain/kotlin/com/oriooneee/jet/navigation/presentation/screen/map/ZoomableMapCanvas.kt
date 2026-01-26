@@ -79,7 +79,7 @@ private fun Rect.intersects(other: Rect): Boolean {
             top < other.bottom && bottom > other.top
 }
 expect fun Modifier.onMouseScroll(
-    onScroll: (scrollDelta: Offset) -> Unit
+    onScroll: (scrollDelta: Offset, position: Offset) -> Unit
 ): Modifier
 
 @Composable
@@ -256,7 +256,7 @@ fun ZoomableMapCanvas(
                         onDoubleTap = { scope.launch { zoomState.smoothZoomIn() } }
                     )
                 }
-                .onMouseScroll { scrollDelta ->
+                .onMouseScroll { scrollDelta, cursorPosition ->
                     // Нормализуем delta - берём только направление
                     val direction = when {
                         scrollDelta.y > 0 -> -1f
@@ -264,10 +264,10 @@ fun ZoomableMapCanvas(
                         else -> 0f
                     }
                     if (direction != 0f) {
-                        val zoomStep = 0.0115f // 2% за шаг
+                        val zoomStep = 0.0115f
                         val zoomFactor = 1f + (direction * zoomStep)
                         zoomState.onGesture(
-                            centroid = Offset(containerSize.width / 2, containerSize.height / 2),
+                            centroid = cursorPosition,
                             pan = Offset.Zero,
                             zoomChange = zoomFactor
                         )
