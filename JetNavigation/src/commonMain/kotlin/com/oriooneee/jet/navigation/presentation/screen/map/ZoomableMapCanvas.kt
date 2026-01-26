@@ -54,8 +54,30 @@ import kotlinx.coroutines.launch
 data class RenderedLabel(
     val label: TextLabel,
     val fontSize: TextUnit,
-    val visible: Boolean
+    val visible: Boolean,
+    val bounds: Rect? = null
 )
+
+private data class CachedPaths(
+    val polygonPaths: List<Pair<Path, Rect>>,
+    val polylinePaths: List<Pair<Path, Rect>>,
+    val routePath: Path?,
+    val routeBounds: Rect?
+)
+
+private fun List<Offset>.toBoundingRect(): Rect {
+    if (isEmpty()) return Rect.Zero
+    val minX = minOf { it.x }
+    val minY = minOf { it.y }
+    val maxX = maxOf { it.x }
+    val maxY = maxOf { it.y }
+    return Rect(minX, minY, maxX, maxY)
+}
+
+private fun Rect.intersects(other: Rect): Boolean {
+    return left < other.right && right > other.left &&
+            top < other.bottom && bottom > other.top
+}
 
 @Composable
 fun ZoomableMapCanvas(
@@ -83,6 +105,54 @@ fun ZoomableMapCanvas(
 
     val iconPainters = renderData.icons.map { it.icon }.distinct()
         .associateWith { rememberVectorPainter(it) }
+
+    // Кэшируем Path объекты - создаются один раз при изменении renderData
+    val cachedPaths = remember(renderData) {
+        val polygonPaths = renderData.polygons.mapNotNull { points ->
+            if (points.isEmpty()) return@mapNotNull null
+            val path = Path().apply {
+                moveTo(points.first().x, points.first().y)
+                for (i in 1 until points.size) lineTo(points[i].x, points[i].y)
+                close()
+            }
+            path to points.toBoundingRect()
+        }
+
+        val polylinePaths = renderData.polylines.mapNotNull { points ->
+            if (points.isEmpty()) return@mapNotNull null
+            val path = Path().apply {
+                moveTo(points.first().x, points.first().y)
+                for (i in 1 until points.size) lineTo(points[i].x, points[i].y)
+            }
+            path to points.toBoundingRect()
+        }
+
+        val routePath = if (renderData.routePath.isNotEmpty()) {
+            Path().apply {
+                val start = renderData.routePath.first()
+                moveTo(start.x, start.y)
+                for (i in 1 until renderData.routePath.size) {
+                    lineTo(renderData.routePath[i].x, renderData.routePath[i].y)
+                }
+            }
+        } else null
+
+        val routeBounds = routePath?.getBounds()
+
+        CachedPaths(polygonPaths, polylinePaths, routePath, routeBounds)
+    }
+
+    // Кэшируем bounds для singleLines
+    val singleLineBounds = remember(renderData) {
+        renderData.singleLines.map { (start, end) ->
+            Rect(
+                minOf(start.x, end.x),
+                minOf(start.y, end.y),
+                maxOf(start.x, end.x),
+                maxOf(start.y, end.y)
+            )
+        }
+    }
 
     val renderedLabels = remember(renderData, density) {
         val linesForCollision = mutableListOf<Pair<Offset, Offset>>()
@@ -184,19 +254,23 @@ fun ZoomableMapCanvas(
                     )
                 }
         ) {
+            // Вычисляем видимую область в координатах контента
+            val viewportInContent = Rect(
+                left = -zoomState.offsetX / zoomState.scale,
+                top = -zoomState.offsetY / zoomState.scale,
+                right = (size.width - zoomState.offsetX) / zoomState.scale,
+                bottom = (size.height - zoomState.offsetY) / zoomState.scale
+            )
+
             withTransform({
                 translate(left = zoomState.offsetX, top = zoomState.offsetY)
                 scale(scaleX = zoomState.scale, scaleY = zoomState.scale, pivot = Offset.Zero)
             }) {
                 val strokeWidth = maxOf(1f, contentSize.height * 0.001f) / 2
 
-                renderData.polygons.forEach { points ->
-                    if (points.isNotEmpty()) {
-                        val path = Path().apply {
-                            moveTo(points.first().x, points.first().y)
-                            for (i in 1 until points.size) lineTo(points[i].x, points[i].y)
-                            close()
-                        }
+                // Рисуем только полигоны в видимой области
+                cachedPaths.polygonPaths.forEach { (path, bounds) ->
+                    if (bounds.intersects(viewportInContent)) {
                         drawPath(path = path, color = planColor.copy(alpha = 0.05f))
                         drawPath(
                             path = path,
@@ -209,12 +283,10 @@ fun ZoomableMapCanvas(
                         )
                     }
                 }
-                renderData.polylines.forEach { points ->
-                    if (points.isNotEmpty()) {
-                        val path = Path().apply {
-                            moveTo(points.first().x, points.first().y)
-                            for (i in 1 until points.size) lineTo(points[i].x, points[i].y)
-                        }
+
+                // Рисуем только polylines в видимой области
+                cachedPaths.polylinePaths.forEach { (path, bounds) ->
+                    if (bounds.intersects(viewportInContent)) {
                         drawPath(
                             path = path,
                             color = planColor,
@@ -226,26 +298,24 @@ fun ZoomableMapCanvas(
                         )
                     }
                 }
-                renderData.singleLines.forEach { (start, end) ->
-                    drawLine(
-                        color = planColor,
-                        start = start,
-                        end = end,
-                        strokeWidth = strokeWidth,
-                        cap = StrokeCap.Round
-                    )
+
+                // Рисуем только линии в видимой области
+                renderData.singleLines.forEachIndexed { index, (start, end) ->
+                    if (singleLineBounds[index].intersects(viewportInContent)) {
+                        drawLine(
+                            color = planColor,
+                            start = start,
+                            end = end,
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
+                    }
                 }
 
-                if (renderData.routePath.isNotEmpty()) {
-                    val routePathObj = Path().apply {
-                        val start = renderData.routePath.first()
-                        moveTo(start.x, start.y)
-                        for (i in 1 until renderData.routePath.size) {
-                            lineTo(renderData.routePath[i].x, renderData.routePath[i].y)
-                        }
-                    }
+                val routePathObj = cachedPaths.routePath
+                val pathBounds = cachedPaths.routeBounds
 
-                    val pathBounds = routePathObj.getBounds()
+                if (routePathObj != null && pathBounds != null && pathBounds.intersects(viewportInContent)) {
                     val buffer = strokeWidth * 10
                     val layerRect = Rect(
                         pathBounds.left - buffer,
@@ -358,11 +428,16 @@ fun ZoomableMapCanvas(
                     }
                 }
 
+                // Рисуем start/end ноды только если в видимой области
                 renderData.startNode?.let {
-                    drawCircle(color = startNodeColor, radius = strokeWidth * 3f, center = it)
+                    if (viewportInContent.contains(it)) {
+                        drawCircle(color = startNodeColor, radius = strokeWidth * 3f, center = it)
+                    }
                 }
                 renderData.endNode?.let {
-                    drawCircle(color = endNodeColor, radius = strokeWidth * 3f, center = it)
+                    if (viewportInContent.contains(it)) {
+                        drawCircle(color = endNodeColor, radius = strokeWidth * 3f, center = it)
+                    }
                 }
 
                 val referenceFontSizeSp = if (renderedLabels.isNotEmpty()) {
@@ -373,10 +448,19 @@ fun ZoomableMapCanvas(
                 val baseSizePx = with(density) { referenceFontSizeSp.sp.toPx() }
                 val baseIconSize = baseSizePx
                 val circleRadius = (baseIconSize / 2f) * 1.5f
+                val labelBuffer = 100f // буфер для размера текста
 
                 renderedLabels.forEach { rendered ->
                     if (rendered.visible) {
                         val label = rendered.label
+                        val labelBounds = Rect(
+                            label.x - labelBuffer,
+                            label.y - labelBuffer,
+                            label.x + labelBuffer,
+                            label.y + labelBuffer
+                        )
+                        if (!labelBounds.intersects(viewportInContent)) return@forEach
+
                         val textColor =
                             if (label.color == "#000000") Color.Black else labelColor
                         val textStyle = TextStyle(
@@ -404,6 +488,15 @@ fun ZoomableMapCanvas(
                 }
 
                 renderData.icons.forEach { iconLabel ->
+                    // Проверяем видимость иконки
+                    val iconBounds = Rect(
+                        iconLabel.x - circleRadius,
+                        iconLabel.y - circleRadius,
+                        iconLabel.x + circleRadius,
+                        iconLabel.y + circleRadius
+                    )
+                    if (!iconBounds.intersects(viewportInContent)) return@forEach
+
                     val painter = iconPainters[iconLabel.icon] ?: return@forEach
 
                     drawCircle(
