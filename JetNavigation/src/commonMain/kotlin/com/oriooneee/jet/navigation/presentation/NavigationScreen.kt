@@ -586,14 +586,7 @@ fun RouteSelectionBottomSheet(
                 val isFastest = route == sortedForCheck.first()
                 val presentation = getRoutePresentation(route, isFastest)
 
-                val badgeText = if (isIndoorRecommended) {
-                    when (route.badge) {
-                        "Fastest" -> "Shortest"
-                        "Recommended" -> "Recommended"
-                        "Mostly Indoor" -> "Indoor"
-                        else -> null
-                    }
-                } else null
+                val badgeText = route.badge
 
                 RouteOptionItem(
                     presentation = presentation,

@@ -11,7 +11,7 @@ data class WeatherResponse(
 ) {
     fun isRecomendedInDoor(): Boolean {
         val byCode = WeatherCode.isIndoorRouteRecommendedСode(currentWeather.weatherCode)
-        val byTemp = currentWeather.temperature !in 10.0..35.0
+        val byTemp = currentWeather.temperature !in -10.0..35.0
         return byCode || byTemp
     }
 }
