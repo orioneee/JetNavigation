@@ -88,6 +88,14 @@ class NavigationEngine(
     private val outputWidth = 2000.0
     private val paddingPct = 0.05
 
+    // Штрафы для маршрутизации (не входят в total distance)
+    companion object {
+        private const val STAIRS_PENALTY = 15.0           // штраф за подъём/спуск по лестнице
+        private const val ENTRANCE_EXIT_PENALTY = 10.0    // штраф за вход/выход из здания
+        private const val BUILDING_TRANSFER_PENALTY = 20.0 // штраф за переход между зданиями
+        private const val FLOOR_CHANGE_PENALTY = 8.0      // штраф за смену этажа
+    }
+
     private val inDoorNodesMap: Map<String, InDoorNode> = masterNav.inDoorNavGraph.nodes.associateBy { it.id }
     private val outDoorNodesMap: Map<String, OutDoorNode> = masterNav.outDoorNavGraph.nodes.associateBy { it.id }
     private val globalAdjacency: Map<String, List<Pair<String, Double>>> = buildGlobalAdjacencyMap()
@@ -275,13 +283,15 @@ class NavigationEngine(
                 return resolvedNode
             }
 
-            globalAdjacency[u]?.forEach { (v, weight) ->
+            globalAdjacency[u]?.forEach { (v, baseWeight) ->
                 val resolvedV = resolveNodeById(v)
                 if (isDestinationOnlyNode(v, startId, startId) && (resolvedV == null || !criteria(resolvedV))) {
                     return@forEach
                 }
 
-                val alt = d + weight
+                // Добавляем штраф за переходы при поиске ближайшего узла
+                val transitionPenalty = calculateTransitionPenalty(u, v)
+                val alt = d + baseWeight + transitionPenalty
                 if (alt < (distances[v] ?: Double.MAX_VALUE)) {
                     distances[v] = alt
                     pq.offer(v to alt)
@@ -318,7 +328,9 @@ class NavigationEngine(
                 if (v != endId && isDestinationOnlyNode(v, startId, endId)) return@forEach
 
                 val modifier = costModifier(u, v)
-                val weight = baseWeight * modifier
+                // Добавляем штраф за переходы (лестницы, входы/выходы и т.д.)
+                val transitionPenalty = calculateTransitionPenalty(u, v)
+                val weight = baseWeight * modifier + transitionPenalty
 
                 val alt = d + weight
                 if (alt < (distances[v] ?: Double.MAX_VALUE)) {
@@ -393,6 +405,64 @@ class NavigationEngine(
             }
         }
         return true
+    }
+
+    /**
+     * Вычисляет штраф за переход между двумя узлами.
+     * Эти штрафы используются только для маршрутизации и не входят в отображаемую дистанцию.
+     */
+    private fun calculateTransitionPenalty(fromId: String, toId: String): Double {
+        val fromNode = resolveNodeById(fromId)
+        val toNode = resolveNodeById(toId)
+
+        if (fromNode == null || toNode == null) return 0.0
+
+        var penalty = 0.0
+
+        // Штраф за лестницы
+        if (fromNode is ResolvedNode.InDoor && fromNode.node.type.contains(NodeType.STAIRS)) {
+            penalty += STAIRS_PENALTY
+        }
+        if (toNode is ResolvedNode.InDoor && toNode.node.type.contains(NodeType.STAIRS)) {
+            penalty += STAIRS_PENALTY
+        }
+
+        // Штраф за вход/выход из здания (переход indoor <-> outdoor)
+        val isEntranceExit = (fromNode is ResolvedNode.InDoor && toNode is ResolvedNode.OutDoor) ||
+                (fromNode is ResolvedNode.OutDoor && toNode is ResolvedNode.InDoor)
+        if (isEntranceExit) {
+            penalty += ENTRANCE_EXIT_PENALTY
+        }
+
+        // Штраф за главный вход (дополнительно, если проходим через MAIN_ENTRANCE)
+        if (fromNode is ResolvedNode.InDoor && fromNode.node.type.contains(NodeType.MAIN_ENTRANCE)) {
+            penalty += ENTRANCE_EXIT_PENALTY / 2
+        }
+        if (toNode is ResolvedNode.InDoor && toNode.node.type.contains(NodeType.MAIN_ENTRANCE)) {
+            penalty += ENTRANCE_EXIT_PENALTY / 2
+        }
+
+        // Штраф за переход между зданиями
+        if (fromNode is ResolvedNode.InDoor && toNode is ResolvedNode.InDoor) {
+            if (fromNode.node.buildNum != toNode.node.buildNum) {
+                penalty += BUILDING_TRANSFER_PENALTY
+            }
+            // Штраф за смену этажа (в пределах одного здания)
+            if (fromNode.node.buildNum == toNode.node.buildNum &&
+                fromNode.node.floorNum != toNode.node.floorNum) {
+                penalty += FLOOR_CHANGE_PENALTY
+            }
+        }
+
+        // Штраф за узел перехода между зданиями
+        if (fromNode is ResolvedNode.InDoor && fromNode.node.type.contains(NodeType.TRANSFER_TO_ANOTHER_BUILDING)) {
+            penalty += BUILDING_TRANSFER_PENALTY / 2
+        }
+        if (toNode is ResolvedNode.InDoor && toNode.node.type.contains(NodeType.TRANSFER_TO_ANOTHER_BUILDING)) {
+            penalty += BUILDING_TRANSFER_PENALTY / 2
+        }
+
+        return penalty
     }
 
     private fun buildStepsFromUnifiedPath(path: List<ResolvedNode>): List<NavigationStep> {
