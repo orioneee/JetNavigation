@@ -78,6 +78,9 @@ private fun Rect.intersects(other: Rect): Boolean {
     return left < other.right && right > other.left &&
             top < other.bottom && bottom > other.top
 }
+expect fun Modifier.onMouseScroll(
+    onScroll: (scrollDelta: Offset) -> Unit
+): Modifier
 
 @Composable
 fun ZoomableMapCanvas(
@@ -252,6 +255,23 @@ fun ZoomableMapCanvas(
                     detectTapGestures(
                         onDoubleTap = { scope.launch { zoomState.smoothZoomIn() } }
                     )
+                }
+                .onMouseScroll { scrollDelta ->
+                    // Нормализуем delta - берём только направление
+                    val direction = when {
+                        scrollDelta.y > 0 -> -1f
+                        scrollDelta.y < 0 -> 1f
+                        else -> 0f
+                    }
+                    if (direction != 0f) {
+                        val zoomStep = 0.0115f // 2% за шаг
+                        val zoomFactor = 1f + (direction * zoomStep)
+                        zoomState.onGesture(
+                            centroid = Offset(containerSize.width / 2, containerSize.height / 2),
+                            pan = Offset.Zero,
+                            zoomChange = zoomFactor
+                        )
+                    }
                 }
         ) {
             // Вычисляем видимую область в координатах контента
