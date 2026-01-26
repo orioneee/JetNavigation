@@ -154,6 +154,7 @@ fun NavigationScreen(
                         ZoomableMapCanvas(
                             renderData = activeMapData?.image,
                             initFocusPoint = activeMapData?.pointOfInterest ?: Offset.Zero,
+                            routeBounds = activeMapData?.routeBounds,
                             planColor = planColor,
                             labelColor = planLabelColor,
                             routeColor = routeColor,

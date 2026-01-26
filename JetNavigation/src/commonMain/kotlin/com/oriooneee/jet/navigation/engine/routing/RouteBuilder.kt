@@ -137,12 +137,26 @@ class RouteBuilder(
 
                         val focusPoint = renderData.startNode ?: renderData.routePath.firstOrNull() ?: androidx.compose.ui.geometry.Offset.Zero
 
+                        val routeBounds = if (renderData.routePath.isNotEmpty()) {
+                            val points = buildList {
+                                addAll(renderData.routePath)
+                                renderData.startNode?.let { add(it) }
+                                renderData.endNode?.let { add(it) }
+                            }
+                            val minX = points.minOf { it.x }
+                            val minY = points.minOf { it.y }
+                            val maxX = points.maxOf { it.x }
+                            val maxY = points.maxOf { it.y }
+                            androidx.compose.ui.geometry.Offset(minX, minY) to androidx.compose.ui.geometry.Offset(maxX, maxY)
+                        } else null
+
                         steps.add(
                             NavigationStep.ByFlor(
                                 flor = floorNum,
                                 building = buildingId,
                                 image = renderData,
                                 pointOfInterest = focusPoint,
+                                routeBounds = routeBounds,
                                 textLabels = renderData.textLabels
                             )
                         )

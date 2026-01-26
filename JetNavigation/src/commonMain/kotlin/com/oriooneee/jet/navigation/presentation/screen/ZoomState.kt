@@ -56,6 +56,36 @@ class ZoomState(private val minScale: Float, private val maxScale: Float) {
         offsetY = newOffset.y
     }
 
+    fun fitToBounds(
+        topLeft: Offset, bottomRight: Offset,
+        paddingFraction: Float = 0.15f,
+        maxZoom: Float = 4f
+    ) {
+        if (containerSize == Size.Zero) return
+
+        val boundsWidth = bottomRight.x - topLeft.x
+        val boundsHeight = bottomRight.y - topLeft.y
+        if (boundsWidth <= 0 || boundsHeight <= 0) return
+
+        val paddingX = containerSize.width * paddingFraction
+        val paddingY = containerSize.height * paddingFraction
+        val availableWidth = containerSize.width - paddingX * 2
+        val availableHeight = containerSize.height - paddingY * 2
+
+        val scaleX = availableWidth / boundsWidth
+        val scaleY = availableHeight / boundsHeight
+        scale = minOf(scaleX, scaleY).coerceIn(minScale, minOf(maxScale, maxZoom))
+
+        val boundsCenter = Offset(
+            (topLeft.x + bottomRight.x) / 2,
+            (topLeft.y + bottomRight.y) / 2
+        )
+        val screenCenter = Offset(containerSize.width / 2, containerSize.height / 2)
+        val newOffset = screenCenter - (boundsCenter * scale)
+        offsetX = newOffset.x
+        offsetY = newOffset.y
+    }
+
     private fun centerContent(contentSize: Size, currentScale: Float) {
         offsetX = (containerSize.width - contentSize.width * currentScale) / 2
         offsetY = (containerSize.height - contentSize.height * currentScale) / 2

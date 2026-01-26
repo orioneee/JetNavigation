@@ -61,6 +61,7 @@ data class RenderedLabel(
 fun ZoomableMapCanvas(
     renderData: FloorRenderData?,
     initFocusPoint: Offset,
+    routeBounds: Pair<Offset, Offset>? = null,
     planColor: Color,
     labelColor: Color,
     routeColor: Color,
@@ -149,12 +150,18 @@ fun ZoomableMapCanvas(
             zoomState.updateContainerSize(containerSize)
         }
 
-        LaunchedEffect(renderData, initFocusPoint) {
+        LaunchedEffect(renderData, initFocusPoint, routeBounds) {
             zoomState.updateContainerSize(containerSize)
-            if (initFocusPoint != Offset.Zero) {
-                zoomState.zoomToPoint(initFocusPoint, contentSize, 3f)
-            } else {
-                zoomState.resetToFit(contentSize)
+            when {
+                routeBounds != null -> {
+                    zoomState.fitToBounds(routeBounds.first, routeBounds.second, paddingFraction = 0.1f)
+                }
+                initFocusPoint != Offset.Zero -> {
+                    zoomState.zoomToPoint(initFocusPoint, contentSize, 3f)
+                }
+                else -> {
+                    zoomState.resetToFit(contentSize)
+                }
             }
         }
 

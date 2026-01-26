@@ -10,6 +10,7 @@ sealed class NavigationStep {
         val flor: Int,
         val image: FloorRenderData,
         val pointOfInterest: Offset = Offset.Zero,
+        val routeBounds: Pair<Offset, Offset>? = null, // topLeft to bottomRight
         val textLabels: List<TextLabel> = emptyList()
     ) : NavigationStep() {
     }
