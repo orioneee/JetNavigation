@@ -8,16 +8,28 @@ import com.oriooneee.jet.navigation.data.NavigationRemoteRepository
 import com.oriooneee.jet.navigation.domain.entities.NavigationDirection
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 import com.oriooneee.jet.navigation.domain.entities.graph.InDoorNode
+import com.oriooneee.jet.navigation.domain.entities.graph.MasterNavigation
 import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
+import com.oriooneee.jet.navigation.domain.entities.weather.WeatherResponse
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.compose.resources.ExperimentalResourceApi
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 data class NavigationUiState(
     val startNode: ResolvedNode? = null,
@@ -43,15 +55,47 @@ data class NavigationUiState(
 
 class NavigationViewModel(
     private val remoteRepository: NavigationRemoteRepository,
-): ViewModel() {
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NavigationUiState())
     val uiState = _uiState.asStateFlow()
 
-    private val navigationEngine: MutableStateFlow<NavigationEngine?> = MutableStateFlow(null)
+    private val _masterNavigation = MutableStateFlow<MasterNavigation?>(null)
+    private val _currentWeather = MutableStateFlow<WeatherResponse?>(null)
+
+    val isIndoorRecommended = _currentWeather.map {
+        it?.isRecomendedInDoor() ?: false
+    }.stateIn(
+        viewModelScope,
+        started = SharingStarted.Lazily,
+        initialValue = false
+    )
+
+    private val navigationEngine = combine(
+        _masterNavigation.filterNotNull(),
+        _currentWeather
+    ) { masterNav, weather ->
+        NavigationEngine(masterNav, weather?.isRecomendedInDoor() ?: false).also {
+            println("Is indoor recommended: ${weather?.isRecomendedInDoor() ?: "no weather data"}")
+        }
+    }
+
+    suspend fun fetchWeatherData(): WeatherResponse? {
+        return withTimeoutOrNull(10.seconds) {
+            remoteRepository.getWeather().getOrNull()
+        }
+
+    }
 
     init {
         loadData()
+        viewModelScope.launch {
+            while (isActive) {
+                delay(5.minutes)
+                val weatherData = fetchWeatherData()
+                _currentWeather.update { weatherData }
+            }
+        }
     }
 
     @OptIn(ExperimentalResourceApi::class)
@@ -60,8 +104,14 @@ class NavigationViewModel(
             _uiState.update { it.copy(isLoading = true) }
 
             try {
-                val engine = remoteRepository.getMainNavigation().getOrNull()?.let { NavigationEngine(it) }
-                navigationEngine.value = engine
+                val navData = async {
+                    remoteRepository.getMainNavigation().getOrNull()
+                }
+                val weatherData = async {
+                    fetchWeatherData()
+                }
+                _masterNavigation.value = navData.await()
+                _currentWeather.value = weatherData.await()
                 _uiState.update {
                     it.copy(
                         isLoading = false
@@ -75,7 +125,7 @@ class NavigationViewModel(
 
     fun onStartNodeSelected(result: SelectNodeResult) {
         viewModelScope.launch(Dispatchers.Default) {
-            val engine = navigationEngine.value ?: return@launch
+            val engine = navigationEngine.first()
             val referenceNode = uiState.value.endNode
             val resolvedNode = engine.resolveSelection(result, referenceNode)
 
@@ -103,7 +153,7 @@ class NavigationViewModel(
 
     fun onEndNodeSelected(result: SelectNodeResult) {
         viewModelScope.launch(Dispatchers.Default) {
-            val engine = navigationEngine.value ?: return@launch
+            val engine = navigationEngine.first()
             val referenceNode = uiState.value.startNode
             val resolvedNode = engine.resolveSelection(result, referenceNode)
 
@@ -138,7 +188,7 @@ class NavigationViewModel(
                 _uiState.update { it.copy(isLoading = true) }
 
                 try {
-                    val engine = navigationEngine.value ?: return@launch
+                    val engine = navigationEngine.first()
                     val routes = engine.getRoute(from = currentEnd, to = currentStart)
 
                     withContext(Dispatchers.Main) {
@@ -193,7 +243,13 @@ class NavigationViewModel(
         val end = uiState.value.endNode ?: return
 
         viewModelScope.launch(Dispatchers.Default) {
-            _uiState.update { it.copy(isLoading = true, navigationSteps = emptyList(), availableRoutes = emptyList()) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    navigationSteps = emptyList(),
+                    availableRoutes = emptyList()
+                )
+            }
 
             try {
                 val engine = navigationEngine.filterNotNull().first()

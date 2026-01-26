@@ -127,7 +127,8 @@ actual fun MapComponent(
 
                 WebView(
                     state = state,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
                 )
             }
         }

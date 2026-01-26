@@ -17,6 +17,7 @@ import com.oriooneee.jet.navigation.domain.entities.graph.MasterNavigation
 import com.oriooneee.jet.navigation.domain.entities.graph.NodeType
 import com.oriooneee.jet.navigation.domain.entities.graph.OutDoorNode
 import com.oriooneee.jet.navigation.domain.entities.graph.SelectNodeResult
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -80,7 +81,10 @@ sealed class ResolvedNode {
         }
 }
 
-class NavigationEngine(private val masterNav: MasterNavigation) {
+class NavigationEngine(
+    private val masterNav: MasterNavigation,
+    private val isRecommendedIndoor: Boolean
+) {
     private val outputWidth = 2000.0
     private val paddingPct = 0.05
 
@@ -89,7 +93,7 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
     private val globalAdjacency: Map<String, List<Pair<String, Double>>> = buildGlobalAdjacencyMap()
 
     init {
-        Log.d(TAG, "NavigationEngine INIT (Unified Graph)")
+        Log.d(TAG, "NavigationEngine INIT")
     }
 
     private fun buildGlobalAdjacencyMap(): Map<String, List<Pair<String, Double>>> {
@@ -189,38 +193,61 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         }
 
         val uniquePaths = allPaths.distinct()
-        val pathResults = uniquePaths.map { pathIds ->
+
+        data class PathEvaluation(
+            val steps: List<NavigationStep>,
+            val totalDist: Double,
+            val outdoorDist: Double
+        )
+
+        val evaluatedPaths = uniquePaths.map { pathIds ->
             val resolvedPath = pathIds.mapNotNull { resolveNodeById(it) }
-            val distance = calculateTotalDistanceGlobal(resolvedPath)
+            val totalDistance = calculateTotalDistanceGlobal(resolvedPath)
+            val outdoorDistance = calculateOutdoorDistance(resolvedPath)
             val steps = buildStepsFromUnifiedPath(resolvedPath)
-            val isOutdoorHeavy = resolvedPath.any { it is ResolvedNode.OutDoor }
-            Triple(NavigationDirection(steps, distance), distance, isOutdoorHeavy)
+
+            PathEvaluation(steps, totalDistance, outdoorDistance)
         }
 
-        val sorted = pathResults.sortedBy { it.second }
-        if (sorted.isEmpty()) return emptyList()
+        if (evaluatedPaths.isEmpty()) return emptyList()
 
-        val resultDirections = mutableListOf<NavigationDirection>()
-        val maxItems = 4
+        val fastestDist = evaluatedPaths.minOf { it.totalDist }
+        val maxAcceptableDist = fastestDist * 1.3
 
-        val outdoorHeavyPaths = sorted.filter { it.third }
-        val indoorHeavyPaths = sorted.filter { !it.third }
+        val sortedPaths = evaluatedPaths.sortedWith { a, b ->
+            if (isRecommendedIndoor) {
+                val aAcceptable = a.totalDist <= maxAcceptableDist
+                val bAcceptable = b.totalDist <= maxAcceptableDist
 
-        if (outdoorHeavyPaths.isNotEmpty() && indoorHeavyPaths.isNotEmpty()) {
-            val primary = if (sorted.first().third) outdoorHeavyPaths else indoorHeavyPaths
-            val secondary = if (sorted.first().third) indoorHeavyPaths else outdoorHeavyPaths
-
-            resultDirections.addAll(primary.take(maxItems - 1).map { it.first })
-
-            val remainingSlots = maxItems - resultDirections.size
-            if (remainingSlots > 0) {
-                resultDirections.addAll(secondary.take(remainingSlots).map { it.first })
+                when {
+                    aAcceptable && !bAcceptable -> -1
+                    !aAcceptable && bAcceptable -> 1
+                    else -> {
+                        val outdoorDiff = a.outdoorDist - b.outdoorDist
+                        if (abs(outdoorDiff) > 10.0) {
+                            a.outdoorDist.compareTo(b.outdoorDist)
+                        } else {
+                            a.totalDist.compareTo(b.totalDist)
+                        }
+                    }
+                }
+            } else {
+                a.totalDist.compareTo(b.totalDist)
             }
-        } else {
-            resultDirections.addAll(sorted.take(maxItems).map { it.first })
         }
 
-        return resultDirections.sortedBy { it.totalDistanceMeters }
+        val minOutdoorDist = evaluatedPaths.minOf { it.outdoorDist }
+
+        return sortedPaths.take(4).map { path ->
+            val badge = when {
+                path.totalDist == fastestDist -> "Fastest"
+                path.outdoorDist == minOutdoorDist && path.outdoorDist < path.totalDist * 0.5 -> "Mostly Indoor"
+                isRecommendedIndoor && path.outdoorDist == minOutdoorDist -> "Recommended"
+                path.outdoorDist > 0 && path.outdoorDist < path.totalDist * 0.3 -> "Balanced"
+                else -> null
+            }
+            NavigationDirection(path.steps, path.totalDist, badge)
+        }
     }
 
     private fun findNearestNodeGlobal(
@@ -249,7 +276,6 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             }
 
             globalAdjacency[u]?.forEach { (v, weight) ->
-                // Skip auditoriums unless they match our search criteria
                 val resolvedV = resolveNodeById(v)
                 if (isDestinationOnlyNode(v, startId, startId) && (resolvedV == null || !criteria(resolvedV))) {
                     return@forEach
@@ -289,7 +315,6 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
             if (u == endId) break
 
             globalAdjacency[u]?.forEach { (v, baseWeight) ->
-                // Skip auditoriums unless it's the target or has matching room number
                 if (v != endId && isDestinationOnlyNode(v, startId, endId)) return@forEach
 
                 val modifier = costModifier(u, v)
@@ -331,18 +356,30 @@ class NavigationEngine(private val masterNav: MasterNavigation) {
         return distance
     }
 
+    private fun calculateOutdoorDistance(path: List<ResolvedNode>): Double {
+        var distance = 0.0
+        for (i in 0 until path.size - 1) {
+            val u = path[i]
+            val v = path[i + 1]
+
+            if (u is ResolvedNode.OutDoor || v is ResolvedNode.OutDoor) {
+                val edgeWeight = globalAdjacency[u.id]?.find { it.first == v.id }?.second
+                if (edgeWeight != null) {
+                    distance += edgeWeight
+                } else if (u is ResolvedNode.OutDoor && v is ResolvedNode.OutDoor) {
+                    distance += haversineDistance(u.node.lat, u.node.lon, v.node.lat, v.node.lon)
+                }
+            }
+        }
+        return distance
+    }
+
     private fun resolveNodeById(id: String): ResolvedNode? {
         inDoorNodesMap[id]?.let { return ResolvedNode.InDoor(it) }
         outDoorNodesMap[id]?.let { return ResolvedNode.OutDoor(it) }
         return null
     }
 
-    /**
-     * Returns true if this node should only be visited as a destination (start/end),
-     * not as an intermediate waypoint. Only auditoriums are restricted.
-     *
-     * Exception: auditoriums with matching room numbers (digits only) to start/end are allowed.
-     */
     private fun isDestinationOnlyNode(nodeId: String, startId: String, endId: String): Boolean {
         val indoorNode = inDoorNodesMap[nodeId] ?: return false
         if (!indoorNode.type.contains(NodeType.AUDITORIUM)) return false

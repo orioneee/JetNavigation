@@ -45,6 +45,7 @@ data class Coordinates(
 data class NavigationDirection(
     val steps: List<NavigationStep>,
     val totalDistanceMeters: Double,
+    val badge: String?
 ) {
     val estimatedTimeMinutes: Double
         get() = totalDistanceMeters / 80.0

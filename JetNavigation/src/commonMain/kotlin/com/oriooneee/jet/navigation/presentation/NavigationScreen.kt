@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.Apartment
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.NaturePeople
 import androidx.compose.material.icons.outlined.Park
 import androidx.compose.material.icons.outlined.WbSunny
@@ -97,6 +98,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -104,6 +106,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -238,7 +241,8 @@ private fun generatePathSummary(steps: List<NavigationStep>): String {
 @Composable
 fun getRoutePresentation(route: NavigationDirection, isFastest: Boolean): RoutePresentation {
     val summary = generatePathSummary(route.steps)
-    val isPureOutdoor = route.steps.all { it is NavigationStep.OutDoorMaps || it is NavigationStep.TransitionToOutDoor }
+    val isPureOutdoor =
+        route.steps.all { it is NavigationStep.OutDoorMaps || it is NavigationStep.TransitionToOutDoor }
     val hasOutdoor = route.steps.any { it is NavigationStep.OutDoorMaps }
 
     return when {
@@ -248,6 +252,7 @@ fun getRoutePresentation(route: NavigationDirection, isFastest: Boolean): RouteP
             icon = Icons.Outlined.WbSunny,
             color = Color(0xFFE65100)
         )
+
         else -> RoutePresentation(
             title = summary,
             subtitle = if (isFastest) "Fastest • ${route.totalDistanceMeters.toInt()}m" else "${route.totalDistanceMeters.toInt()}m",
@@ -257,15 +262,17 @@ fun getRoutePresentation(route: NavigationDirection, isFastest: Boolean): RouteP
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalAnimationApi::class,
+@OptIn(
+    ExperimentalLayoutApi::class, ExperimentalAnimationApi::class,
     ExperimentalMaterial3Api::class
 )
 @Composable
 fun NavigationScreen(
     isDarkTheme: Boolean,
     viewModel: NavigationViewModel = koinViewModel(),
-    ) {
+) {
     val uiState by viewModel.uiState.collectAsState()
+    val isIndoorRecommended by viewModel.isIndoorRecommended.collectAsState()
 
     val planColor = MaterialTheme.colorScheme.onSurface
     val planLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -273,6 +280,7 @@ fun NavigationScreen(
     val startNodeColor = MaterialTheme.colorScheme.primary
     val endNodeColor = MaterialTheme.colorScheme.primary
     val navController = LocalNavController.current
+    var mapHeight by remember { mutableStateOf(0.dp) }
 
     var showRouteSelection by remember { mutableStateOf(false) }
 
@@ -307,13 +315,20 @@ fun NavigationScreen(
     BoxWithConstraints {
         val isLargeScreen = maxWidth >= 650.dp
         var isPanelExpanded by remember { mutableStateOf(true) }
+        val maxHeightForBottomSheet = (maxHeight - (mapHeight + 80.dp)).takeIf {
+            mapHeight > 0.dp
+        } ?: 180.dp
+        LaunchedEffect(maxHeightForBottomSheet){
+            println("Max height for bottom sheet: $maxHeightForBottomSheet")
+        }
 
         Scaffold { paddingValues ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-            ) {
+            )
+            {
                 Card(
                     modifier = Modifier
                         .statusBarsPadding()
@@ -350,7 +365,6 @@ fun NavigationScreen(
                         )
 
                         if (currentStep != null) {
-
                             AnimatedContent(
                                 targetState = currentStep,
                                 transitionSpec = {
@@ -387,14 +401,22 @@ fun NavigationScreen(
                                     }
 
                                     is NavigationStep.OutDoorMaps -> {
+                                        val density = LocalDensity.current
                                         MapComponent(
                                             step = step,
-                                            isDarkTheme = isDarkTheme
+                                            isDarkTheme = isDarkTheme,
+                                            modifier = Modifier.onGloballyPositioned {
+                                                mapHeight = with(density) {
+                                                    it.size.height.toDp()
+                                                }
+                                            }
                                         )
                                     }
+
                                     is NavigationStep.TransitionToInDoor -> {
                                         TransitionToInDoorScreen(toBuilding = step.toBuilding)
                                     }
+
                                     is NavigationStep.TransitionToOutDoor -> {
                                         TransitionToOutDoorScreen(fromBuilding = step.fromBuilding)
                                     }
@@ -469,6 +491,7 @@ fun NavigationScreen(
                             currentStepIndex = uiState.currentStepIndex,
                             totalSteps = uiState.navigationSteps.size,
                             routeStats = uiState.routeStats,
+                            isIndoorRecommended = isIndoorRecommended,
                             onPrevious = viewModel::previousStep,
                             onNext = viewModel::nextStep,
                             startNode = uiState.startNode,
@@ -509,17 +532,23 @@ fun NavigationScreen(
                     viewModel.selectRoute(route)
                     showRouteSelection = false
                 },
-                onDismiss = { showRouteSelection = false }
+                onDismiss = { showRouteSelection = false },
+                isIndoorRecommended = isIndoorRecommended,
+                maxHeightForBottomSheet = maxHeightForBottomSheet
             )
         }
     }
 }
+
 expect val applyMaxHeightForBottomSheet: Boolean
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RouteSelectionBottomSheet(
     routes: List<NavigationDirection>,
     selectedRoute: NavigationDirection?,
+    isIndoorRecommended: Boolean,
+    maxHeightForBottomSheet: Dp,
     onRouteSelected: (NavigationDirection) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -535,7 +564,7 @@ fun RouteSelectionBottomSheet(
             modifier = Modifier
                 .then(
                     if (applyMaxHeightForBottomSheet)
-                        Modifier.heightIn(max = 180.dp)
+                        Modifier.heightIn(max = maxHeightForBottomSheet)
                     else
                         Modifier
                 )
@@ -545,9 +574,9 @@ fun RouteSelectionBottomSheet(
         ) {
             Text(
                 text = "Choose a Route",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 16.dp, start = 8.dp)
+                modifier = Modifier.padding(bottom = 16.dp, start = 4.dp)
             )
 
             val sortedForCheck = remember(routes) { routes.sortedBy { it.totalDistanceMeters } }
@@ -557,11 +586,21 @@ fun RouteSelectionBottomSheet(
                 val isFastest = route == sortedForCheck.first()
                 val presentation = getRoutePresentation(route, isFastest)
 
+                val badgeText = if (isIndoorRecommended) {
+                    when (route.badge) {
+                        "Fastest" -> "Shortest"
+                        "Recommended" -> "Recommended"
+                        "Mostly Indoor" -> "Indoor"
+                        else -> null
+                    }
+                } else null
+
                 RouteOptionItem(
                     presentation = presentation,
                     timeMinutes = route.estimatedTimeMinutes,
                     stepCount = route.steps.size,
                     isSelected = isSelected,
+                    badge = badgeText,
                     onClick = { onRouteSelected(route) }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -576,6 +615,7 @@ fun RouteOptionItem(
     timeMinutes: Double,
     stepCount: Int,
     isSelected: Boolean,
+    badge: String? = null,
     onClick: () -> Unit
 ) {
     val backgroundColor = if (isSelected)
@@ -591,15 +631,17 @@ fun RouteOptionItem(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         color = backgroundColor,
-        modifier = Modifier.fillMaxWidth().then(borderModifier)
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(borderModifier)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(40.dp)
                     .background(presentation.color.copy(alpha = 0.15f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -607,25 +649,58 @@ fun RouteOptionItem(
                     imageVector = presentation.icon,
                     contentDescription = null,
                     tint = presentation.color,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
+                if (badge != null) {
+                    val badgeColor = if (badge == "Recommended")
+                        MaterialTheme.colorScheme.tertiaryContainer
+                    else
+                        MaterialTheme.colorScheme.secondaryContainer
+
+                    val badgeTextColor = if (badge == "Recommended")
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    else
+                        MaterialTheme.colorScheme.onSecondaryContainer
+
+                    Surface(
+                        color = badgeColor,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    ) {
+                        Text(
+                            text = badge,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeTextColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
                 Text(
                     text = presentation.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
                 Text(
                     text = presentation.subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             Column(horizontalAlignment = Alignment.End) {
                 val mins = timeMinutes.toInt()
@@ -644,7 +719,6 @@ fun RouteOptionItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "$stepCount steps",
                     style = MaterialTheme.typography.labelSmall,
@@ -871,6 +945,7 @@ fun NavigationControls(
     currentStepIndex: Int,
     totalSteps: Int,
     routeStats: NavigationDirection?,
+    isIndoorRecommended: Boolean,
     isExpanded: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -895,55 +970,87 @@ fun NavigationControls(
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
                 onClick = { if (availableRoutesCount > 1) onOpenRouteSelection() }
             ) {
-                Row(
+                Column(
                     modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (availableRoutesCount > 1) {
-                            Icon(
-                                imageVector = Icons.Default.SwapVert,
-                                contentDescription = "Change route",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(MaterialTheme.colorScheme.surface.copy(0.5f), CircleShape)
-                                    .padding(4.dp)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (availableRoutesCount > 1) {
+                                Icon(
+                                    imageVector = Icons.Default.SwapVert,
+                                    contentDescription = "Change route",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.surface.copy(0.5f),
+                                            CircleShape
+                                        )
+                                        .padding(4.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                            }
 
-                        Column {
-                            val mins = stats.estimatedTimeMinutes.toInt()
-                            val secs = ((stats.estimatedTimeMinutes - mins) * 60).toInt()
+                            Column {
+                                val mins = stats.estimatedTimeMinutes.toInt()
+                                val secs = ((stats.estimatedTimeMinutes - mins) * 60).toInt()
 
-                            val typeTitle = getRoutePresentation(stats, false).title
+                                val typeTitle = getRoutePresentation(stats, false).title
 
-                            Text(
-                                text = "$mins min $secs sec",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (availableRoutesCount > 1) {
+                                Text(
+                                    text = "$mins min $secs sec",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (availableRoutesCount > 1) {
+                                        Text(
+                                            text = "$typeTitle • ",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                     Text(
-                                        text = "$typeTitle • ",
+                                        text = "~${stats.totalDistanceMeters.toInt()} meters",
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Text(
-                                    text = "~${stats.totalDistanceMeters.toInt()} meters",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                         }
+                        Icon(
+                            Icons.Default.Timer,
+                            null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
-                    Icon(Icons.Default.Timer, null, tint = MaterialTheme.colorScheme.primary)
+
+                    if (isIndoorRecommended) {
+                        androidx.compose.material3.HorizontalDivider(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Indoor route recommended",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1124,7 +1231,8 @@ fun ZoomableMapCanvas(
         }
         val minReadableSizeVal = 3f
         val goodSizes = labelMaxSizes.map { it.second.value }.filter { it > 0 }
-        val standardSizeVal = if (goodSizes.isNotEmpty()) goodSizes.min() else minReadableSizeVal
+        val standardSizeVal =
+            if (goodSizes.isNotEmpty()) goodSizes.min() else minReadableSizeVal
         labelMaxSizes.map { (label, maxFitSize) ->
             val constrainedSize =
                 if (maxFitSize.value < minReadableSizeVal) minReadableSizeVal else minOf(
@@ -1361,7 +1469,8 @@ fun ZoomableMapCanvas(
                 renderedLabels.forEach { rendered ->
                     if (rendered.visible) {
                         val label = rendered.label
-                        val textColor = if (label.color == "#000000") Color.Black else labelColor
+                        val textColor =
+                            if (label.color == "#000000") Color.Black else labelColor
                         val textStyle = TextStyle(
                             color = textColor,
                             fontSize = rendered.fontSize,
