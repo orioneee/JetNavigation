@@ -43,6 +43,9 @@ fun getMapboxHtml(
                 #map { position: absolute; top: 0; bottom: 0; width: 100%; }
                 .marker-start { background-color: $googleBlue; border: 2px solid $whiteColor; width: 14px; height: 14px; border-radius: 50%; }
                 .marker-end { background-color: $whiteColor; border: 2px solid $googleBlue; width: 14px; height: 14px; border-radius: 50%; }
+                .mapboxgl-ctrl-logo { display: none !important; }
+                .mapboxgl-ctrl-attrib { display: none !important; }
+                .mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right { display: none !important; }
             </style>
         </head>
         <body>
@@ -61,22 +64,20 @@ fun getMapboxHtml(
                     pitch: 0,
                     dragRotate: false,
                     projection: 'mercator',
-                    // Конфигурация при инициализации (работает лучше в новых версиях)
+                    attributionControl: false,
                     config: {
                         basemap: {
                             lightPreset: '$lightPreset',
-                            theme: 'monochrome'
+                            theme: 'faded'
                         }
                     }
                 });
 
                 map.on('style.load', () => {
-                    // Явная установка свойств для гарантии применения темы
                     try {
                         map.setConfigProperty('basemap', 'lightPreset', '$lightPreset');
-                        map.setConfigProperty('basemap', 'theme', 'monochrome');
+                        map.setConfigProperty('basemap', 'theme', 'faded');
                     } catch (e) {
-                        console.error("Config error:", e);
                     }
 
                     if (coordinates.length >= 2) {
@@ -88,7 +89,6 @@ fun getMapboxHtml(
                             }
                         });
                         
-                        // СЛОТЫ: В Standard стиле лучше использовать слоты, чтобы линии были под метками, но над картой
                         map.addLayer({
                             'id': 'route-outline',
                             'type': 'line',

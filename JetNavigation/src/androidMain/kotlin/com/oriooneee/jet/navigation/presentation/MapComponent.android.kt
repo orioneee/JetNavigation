@@ -109,7 +109,7 @@ actual fun MapComponent(
         style = {
             MapboxStandardStyle(
                 init = {
-                    theme = ThemeValue.MONOCHROME
+                    theme = ThemeValue.FADED
                     lightPreset = if (isDarkTheme) {
                         LightPresetValue.NIGHT
                     } else {

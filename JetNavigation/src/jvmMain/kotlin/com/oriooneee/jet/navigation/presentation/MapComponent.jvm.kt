@@ -34,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.max
+
 var isInitialized by mutableStateOf(false)
 
 @Composable
@@ -119,7 +120,7 @@ actual fun MapComponent(
 
                 if (state.loadingState is LoadingState.Loading) {
                     LinearProgressIndicator(
-                        progress = (state.loadingState as LoadingState.Loading).progress,
+                        progress = { (state.loadingState as LoadingState.Loading).progress },
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.secondary
                     )
@@ -128,7 +129,7 @@ actual fun MapComponent(
                 WebView(
                     state = state,
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxSize(),
                 )
             }
         }
