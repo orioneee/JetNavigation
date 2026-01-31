@@ -67,7 +67,7 @@ android {
     buildTypes {
         debug {
             isDebuggable = false
-//            isMinifyEnabled = true
+            isMinifyEnabled = true
         }
         release {
             isMinifyEnabled = true

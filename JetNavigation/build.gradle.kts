@@ -59,8 +59,8 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)
-            implementation(libs.android.ndk27)
-            implementation(libs.maps.compose.ndk27)
+//            implementation(libs.android.ndk27)
+//            implementation(libs.maps.compose.ndk27)
             implementation(libs.androidx.startup.runtime)
             implementation(libs.maps.compose)
         }
