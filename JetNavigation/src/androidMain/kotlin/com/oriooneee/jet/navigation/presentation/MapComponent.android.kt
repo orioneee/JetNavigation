@@ -10,14 +10,14 @@ actual fun MapComponent(
     step: NavigationStep.OutDoorMaps?,
     isDarkTheme: Boolean
 ) {
-//    MapBoxMapComponent(
-//        modifier = modifier,
-//        step = step,
-//        isDarkTheme = isDarkTheme
-//    )
-    GoogleMapsMapComponent(
+    MapBoxMapComponent(
         modifier = modifier,
         step = step,
         isDarkTheme = isDarkTheme
     )
+//    GoogleMapsMapComponent(
+//        modifier = modifier,
+//        step = step,
+//        isDarkTheme = isDarkTheme
+//    )
 }
