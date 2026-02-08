@@ -29,7 +29,6 @@ import coil3.compose.SubcomposeAsyncImage
 import com.oriooneee.jet.navigation.buildconfig.BuildConfig
 import com.oriooneee.jet.navigation.domain.entities.Coordinates
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
-import io.ktor.http.encodeURLQueryComponent
 
 fun getMapboxHtml(
     accessToken: String,
@@ -223,7 +222,9 @@ fun getStaticMapUrl(
     val width = 500
     val height = 500
 
-    val encodedPath = encodePolyline(step.path).encodeURLQueryComponent()
+    val rawPolyline = encodePolyline(step.path)
+    val encodedPath = rawPolyline.escapeUrlParam()
+
     val pathOverlay = "path-5+$colorHex-1($encodedPath)"
 
     val startPoint = step.path.first()
@@ -231,16 +232,27 @@ fun getStaticMapUrl(
 
     val startPin = "pin-s+$colorHex(${startPoint.longitude},${startPoint.latitude})"
 
-    val markerImageUrl =
-        "https://raw.githubusercontent.com/orioneee/JetNavigation/refs/heads/main/JetNavigation/src/commonMain/composeResources/files/marker.png"
-    val encodedMarkerUrl = markerImageUrl.replace(":", "%3A").replace("/", "%2F")
+    val markerImageUrl = "https://raw.githubusercontent.com/orioneee/JetNavigation/refs/heads/main/JetNavigation/src/commonMain/composeResources/files/marker.png"
+    val encodedMarkerUrl = markerImageUrl.escapeUrlParam()
+
     val endPin = "url-$encodedMarkerUrl(${endPoint.longitude},${endPoint.latitude})"
 
     val overlays = "$pathOverlay,$endPin,$startPin"
     val bounds = "[28.40455,49.22823,28.41498,49.2358]"
 
-    return "https://api.mapbox.com/styles/v1/$styleId/static/$overlays/$bounds/${width}x${height}@2x?access_token=$accessToken&attribution=false&logo=false".also {
-        println("Generated Static Map URL: $it")
+    return "https://api.mapbox.com/styles/v1/$styleId/static/$overlays/$bounds/${width}x${height}@2x?access_token=$accessToken&attribution=false&logo=false"
+}
+
+private fun String.escapeUrlParam(): String {
+    val unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    return buildString {
+        this@escapeUrlParam.forEach { char ->
+            if (char in unreserved) {
+                append(char)
+            } else {
+                append("%${char.code.toString(16).uppercase().padStart(2, '0')}")
+            }
+        }
     }
 }
 
@@ -267,7 +279,7 @@ fun StaticImageMap(
             modifier = modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
             error = {
-                println("Failed to load static map image: ${it.result.throwable.stackTraceToString()}")
+                println("Failed to load static map image url: $imageUrl error: ${it.result.throwable}")
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
