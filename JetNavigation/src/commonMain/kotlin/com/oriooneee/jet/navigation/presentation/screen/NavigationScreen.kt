@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -46,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,12 +90,26 @@ fun NavigationScreen(
     isDarkTheme: Boolean,
     viewModel: NavigationViewModel = koinViewModel(),
 ) {
+    if (isWebOrDesktop) {
+        NavigationScreenWebDesktop(isDarkTheme = isDarkTheme, viewModel = viewModel)
+    } else {
+        NavigationScreenMobile(isDarkTheme = isDarkTheme, viewModel = viewModel)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NavigationScreenWebDesktop(
+    isDarkTheme: Boolean,
+    viewModel: NavigationViewModel,
+) {
     val uiState by viewModel.uiState.collectAsState()
     val currentStep = uiState.currentStep
     var isHiddenMapCompoent by remember { mutableStateOf(false) }
     var shouldHideMap by remember { mutableStateOf(false) }
+
     LaunchedEffect(isHiddenMapCompoent) {
-        if (isHiddenMapCompoent && currentStep is NavigationStep.OutDoorMaps && isWebOrDesktop) {
+        if (isHiddenMapCompoent && currentStep is NavigationStep.OutDoorMaps) {
             shouldHideMap = true
             delay(1.seconds)
             isHiddenMapCompoent = false
@@ -184,7 +201,6 @@ fun NavigationScreen(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .padding(paddingValues)
             ) {
-
                 Card(
                     modifier = Modifier
                         .statusBarsPadding()
@@ -281,33 +297,7 @@ fun NavigationScreen(
                                 }
                             }
                         } else {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(32.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.LocationOn,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(80.dp),
-                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                )
-                                Spacer(Modifier.height(24.dp))
-                                Text(
-                                    text = "Ready to Navigate",
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = "Select your start and destination points to view the route on the map",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 16.dp)
-                                )
-                            }
+                            EmptyStateContent()
                         }
                     }
                 }
@@ -387,6 +377,350 @@ fun NavigationScreen(
                 }
             }
         }
+    }
+}
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NavigationScreenMobile(
+    isDarkTheme: Boolean,
+    viewModel: NavigationViewModel,
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val navController = LocalNavController.current
+    val scope = rememberCoroutineScope()
+
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { uiState.navigationSteps.size }
+    )
+
+    LaunchedEffect(uiState.navigationSteps.size, uiState.currentStepIndex) {
+        if (uiState.navigationSteps.isNotEmpty()) {
+            pagerState.scrollToPage(uiState.currentStepIndex)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != uiState.currentStepIndex && uiState.navigationSteps.isNotEmpty()) {
+            viewModel.setStepIndex(pagerState.currentPage)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        navController.currentBackStackEntryFlow.collect {
+            val savedStateHandle = it.savedStateHandle
+            launch {
+                savedStateHandle.getStateFlow<String?>(
+                    KEY_SELECTED_START_NODE,
+                    null
+                ).collect { node ->
+                    if (node != null) {
+                        viewModel.onStartNodeSelected(Json.decodeFromString(node))
+                        it.savedStateHandle.remove<String>(KEY_SELECTED_START_NODE)
+                    }
+                }
+            }
+            launch {
+                savedStateHandle.getStateFlow<String?>(
+                    KEY_SELECTED_END_NODE,
+                    null
+                ).collect { node ->
+                    if (node != null) {
+                        viewModel.onEndNodeSelected(Json.decodeFromString(node))
+                        it.savedStateHandle.remove<String>(KEY_SELECTED_END_NODE)
+                    }
+                }
+            }
+        }
+    }
+
+    val planColor = MaterialTheme.colorScheme.onSurface
+    val planLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val routeColor = MaterialTheme.colorScheme.primary
+    val startNodeColor = MaterialTheme.colorScheme.primary
+    val endNodeColor = MaterialTheme.colorScheme.primary
+    var mapHeight by remember { mutableStateOf(0.dp) }
+
+    BoxWithConstraints {
+        val isLargeScreen = maxWidth >= 650.dp
+        var isPanelExpanded by remember { mutableStateOf(true) }
+
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = {}) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = null)
+                        }
+                    },
+                    title = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "JetNavigation",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = "Powered by MapBox",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 10.sp
+                            )
+                        }
+                    },
+                    modifier = Modifier.clip(
+                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+                    )
+                )
+            },
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(paddingValues)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 16.dp,
+                            bottom = 16.dp
+                        ),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (uiState.navigationSteps.isEmpty()) {
+                            EmptyStateContent()
+                        } else {
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.fillMaxSize()
+                            ) { page ->
+                                val step = uiState.navigationSteps.getOrNull(page)
+
+                                if (step != null) {
+                                    StepContent(
+                                        step = step,
+                                        isDarkTheme = isDarkTheme,
+                                        planColor = planColor,
+                                        planLabelColor = planLabelColor,
+                                        routeColor = routeColor,
+                                        startNodeColor = startNodeColor,
+                                        endNodeColor = endNodeColor,
+                                        onMapHeightChanged = { mapHeight = it }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 16.dp,
+                    tonalElevation = 4.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .animateContentSize(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                            .navigationBarsPadding()
+                            .padding(bottom = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isPanelExpanded = !isPanelExpanded },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isPanelExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Toggle Panel",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+
+                        NavigationControls(
+                            currentStepIndex = uiState.currentStepIndex,
+                            totalSteps = uiState.navigationSteps.size,
+                            routeStats = uiState.routeStats,
+                            isIndoorRecommended = false,
+                            onPrevious = {
+                                scope.launch {
+                                    if (pagerState.currentPage > 0) {
+                                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                    }
+                                }
+                            },
+                            onNext = {
+                                scope.launch {
+                                    if (pagerState.currentPage < uiState.navigationSteps.size - 1) {
+                                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                    }
+                                }
+                            },
+                            startNode = uiState.startNode,
+                            endNode = uiState.endNode,
+                            isLoading = uiState.isLoading,
+                            onSelectStart = {
+                                navController.navigate(
+                                    Route.SelectDestination(
+                                        isStartNode = true,
+                                        false
+                                    )
+                                )
+                            },
+                            onSelectEnd = {
+                                navController.navigate(
+                                    Route.SelectDestination(
+                                        isStartNode = false,
+                                        uiState.startNode != null
+                                    )
+                                )
+                            },
+                            onSwapNodes = viewModel::swapNodes,
+                            isExpanded = isPanelExpanded,
+                            isVertical = !isLargeScreen,
+                            availableRoutesCount = uiState.availableRoutes.size,
+                            onOpenRouteSelection = {
+                                navController.navigate(Route.SelectRoute)
+                            },
+                            isDarkMode = isDarkTheme
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StepContent(
+    step: NavigationStep,
+    isDarkTheme: Boolean,
+    planColor: Color,
+    planLabelColor: Color,
+    routeColor: Color,
+    startNodeColor: Color,
+    endNodeColor: Color,
+    onMapHeightChanged: (androidx.compose.ui.unit.Dp) -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        val activeMapData = step as? NavigationStep.ByFlor
+
+        ZoomableMapCanvas(
+            renderData = activeMapData?.image,
+            initFocusPoint = activeMapData?.pointOfInterest ?: Offset.Zero,
+            routeBounds = activeMapData?.routeBounds,
+            planColor = planColor,
+            labelColor = planLabelColor,
+            routeColor = routeColor,
+            startNodeColor = startNodeColor,
+            endNodeColor = endNodeColor,
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(if (activeMapData != null) 1f else 0f)
+        )
+
+        when (step) {
+            is NavigationStep.ByFlor -> {
+                FloorAndBuildingBadge(
+                    floorNumber = step.flor,
+                    buildingNumber = step.building,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(16.dp)
+                )
+            }
+
+            is NavigationStep.TransitionToFlor -> {
+                TransitionScreen(
+                    targetFloor = step.to,
+                    currentFlor = step.from
+                )
+            }
+
+            is NavigationStep.TransitionToBuilding -> {
+                TransitionToBuildingScreen(
+                    fromBuilding = step.form,
+                    toBuilding = step.to
+                )
+            }
+
+            is NavigationStep.OutDoorMaps -> {
+                val density = LocalDensity.current
+                MapComponent(
+                    step = step,
+                    isDarkTheme = isDarkTheme,
+                    modifier = Modifier.onGloballyPositioned {
+                        onMapHeightChanged(with(density) { it.size.height.toDp() })
+                    }
+                )
+            }
+
+            is NavigationStep.TransitionToInDoor -> {
+                TransitionToInDoorScreen(toBuilding = step.toBuilding)
+            }
+
+            is NavigationStep.TransitionToOutDoor -> {
+                TransitionToOutDoorScreen(fromBuilding = step.fromBuilding)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyStateContent() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.padding(32.dp)
+    ) {
+        Icon(
+            Icons.Default.LocationOn,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "Ready to Navigate",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Select your start and destination points to view the route on the map",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
     }
 }

@@ -252,4 +252,11 @@ class NavigationViewModel(
             } else it
         }
     }
+    fun setStepIndex(index: Int) {
+        _uiState.update {
+            if (index in it.navigationSteps.indices) {
+                it.copy(currentStepIndex = index)
+            } else it
+        }
+    }
 }
