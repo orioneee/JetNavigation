@@ -17,6 +17,6 @@ interface NativeFactory {
     ): UIView
 
     companion object {
-        fun getMapBoxToken() = BuildConfig.MAPBOX_API_KEY
+        fun getMapBoxToken() = BuildConfig.MAPBOX_TOKEN
     }
 }

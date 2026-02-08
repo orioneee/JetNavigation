@@ -50,7 +50,7 @@ fun MapBoxMapComponent(
             isDarkTheme = isDarkTheme
         )
     } else{
-        MapboxOptions.accessToken = BuildConfig.MAPBOX_API_KEY
+        MapboxOptions.accessToken = BuildConfig.MAPBOX_TOKEN
 
         val context = LocalContext.current
         val endMarkerBitmap = remember {

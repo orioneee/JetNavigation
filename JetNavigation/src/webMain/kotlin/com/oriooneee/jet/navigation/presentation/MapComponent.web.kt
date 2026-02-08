@@ -33,7 +33,7 @@ actual fun MapComponent(
         }
 
         val mapHtml = remember(pathPointsJson, isDarkTheme) {
-            getMapboxHtml(BuildConfig.MAPBOX_API_KEY, pathPointsJson, isDarkTheme, isStatic)
+            getMapboxHtml(pathPointsJson, isDarkTheme, isStatic)
         }
 
         Box(modifier = modifier) {
