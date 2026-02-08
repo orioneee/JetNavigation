@@ -18,6 +18,7 @@
 ## 📖 Table of Contents
 
 - [About](#-about)
+- [Backend](#-backend)
 - [Features](#-features)
 - [Supported Platforms](#-supported-platforms)
 - [Quick Start](#-quick-start)
@@ -42,6 +43,16 @@ A student needs to get from Room 305 in Building 1 to Room 112 in Building 3. Je
 3. 🚶 Exit to the campus
 4. 🗺️ Outdoor route across the campus to Building 3
 5. 🏢 Enter Building 3 and navigate to the destination room
+
+---
+
+## 🖥️ Backend
+
+The app uses a remote backend server for navigation graph data and routing:
+
+🔗 **https://jetnavigationserver.onrender.com**
+
+The server provides building floor plans, navigation graphs, and route calculation APIs that the app consumes via Ktor HTTP client.
 
 ---
 
