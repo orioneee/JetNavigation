@@ -48,19 +48,19 @@ fun TransitionScreen(currentFlor: Int, targetFloor: Int) {
             imageVector = Icons.Default.ArrowUpward,
             contentDescription = null,
             modifier = Modifier
-                .size(100.dp)
+                .size(48.dp)
                 .rotate(if (isUp) 0f else 180f),
             tint = MaterialTheme.colorScheme.primary
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
             text = if (isUp) "Go Up To" else "Go Down To",
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = "Floor $targetFloor",
-            style = MaterialTheme.typography.displayLarge,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
@@ -76,7 +76,7 @@ fun TransitionToBuildingScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(32.dp),
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -90,13 +90,13 @@ fun TransitionToBuildingScreen(
                 Icon(
                     imageVector = Icons.Default.LocationCity,
                     contentDescription = null,
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(40.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "$fromBuilding",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -104,29 +104,29 @@ fun TransitionToBuildingScreen(
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 24.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
-                Canvas(modifier = Modifier.width(40.dp).height(2.dp)) {
-                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                Canvas(modifier = Modifier.width(32.dp).height(2.dp)) {
+                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
                     drawLine(
                         color = lineColor,
                         start = Offset(0f, 0f),
                         end = Offset(size.width, 0f),
                         pathEffect = pathEffect,
-                        strokeWidth = 4.dp.toPx(),
+                        strokeWidth = 3.dp.toPx(),
                         cap = StrokeCap.Round
                     )
                 }
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp).padding(top = 4.dp),
+                    modifier = Modifier.size(20.dp).padding(top = 2.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -135,38 +135,36 @@ fun TransitionToBuildingScreen(
                 Icon(
                     imageVector = Icons.Default.LocationCity,
                     contentDescription = null,
-                    modifier = Modifier.size(80.dp),
+                    modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "$toBuilding",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
         }
 
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(24.dp))
 
         Text(
-            text = "Now you exiting building $fromBuilding",
-            style = MaterialTheme.typography.headlineSmall,
+            text = "Exiting building $fromBuilding",
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
 
         Text(
-            text = "and entering building $toBuilding",
-            style = MaterialTheme.typography.displayMedium,
+            text = "Entering building $toBuilding",
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
             textAlign = TextAlign.Center
         )
-
-        Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -182,11 +180,11 @@ fun TransitionToOutDoorScreen(fromBuilding: Int) {
                 Brush.verticalGradient(
                     colors = listOf(
                         MaterialTheme.colorScheme.surfaceContainerHigh,
-                        outdoorColor.copy(alpha = 0.1f)
+                        outdoorColor.copy(alpha = 0.08f)
                     )
                 )
             )
-            .padding(32.dp),
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -199,13 +197,13 @@ fun TransitionToOutDoorScreen(fromBuilding: Int) {
                 Icon(
                     imageVector = Icons.Default.LocationCity,
                     contentDescription = null,
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(40.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Building $fromBuilding",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -213,29 +211,29 @@ fun TransitionToOutDoorScreen(fromBuilding: Int) {
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 24.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(24.dp),
                     tint = lineColor
                 )
-                Canvas(modifier = Modifier.width(40.dp).height(2.dp)) {
-                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                Canvas(modifier = Modifier.width(32.dp).height(2.dp)) {
+                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
                     drawLine(
                         color = lineColor,
                         start = Offset(0f, 0f),
                         end = Offset(size.width, 0f),
                         pathEffect = pathEffect,
-                        strokeWidth = 4.dp.toPx(),
+                        strokeWidth = 3.dp.toPx(),
                         cap = StrokeCap.Round
                     )
                 }
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp).padding(top = 4.dp),
+                    modifier = Modifier.size(20.dp).padding(top = 2.dp),
                     tint = lineColor
                 )
             }
@@ -244,32 +242,32 @@ fun TransitionToOutDoorScreen(fromBuilding: Int) {
                 Icon(
                     imageVector = Icons.Outlined.Park,
                     contentDescription = null,
-                    modifier = Modifier.size(80.dp),
+                    modifier = Modifier.size(48.dp),
                     tint = outdoorColor
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Outside",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = outdoorColor
                 )
             }
         }
 
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(20.dp))
         Text(
             text = "Exit the Building",
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = outdoorColor
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
 
         Text(
-            text = "Continue your route outdoors",
-            style = MaterialTheme.typography.bodyLarge,
+            text = "Continue outdoors",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
@@ -288,12 +286,12 @@ fun TransitionToInDoorScreen(toBuilding: Int) {
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        outdoorColor.copy(alpha = 0.1f),
+                        outdoorColor.copy(alpha = 0.08f),
                         MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 )
             )
-            .padding(32.dp),
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -306,13 +304,13 @@ fun TransitionToInDoorScreen(toBuilding: Int) {
                 Icon(
                     imageVector = Icons.Outlined.Park,
                     contentDescription = null,
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(40.dp),
                     tint = outdoorColor
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Outside",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = outdoorColor
                 )
@@ -320,29 +318,29 @@ fun TransitionToInDoorScreen(toBuilding: Int) {
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 24.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(24.dp),
                     tint = lineColor
                 )
-                Canvas(modifier = Modifier.width(40.dp).height(2.dp)) {
-                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                Canvas(modifier = Modifier.width(32.dp).height(2.dp)) {
+                    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
                     drawLine(
                         color = lineColor,
                         start = Offset(0f, 0f),
                         end = Offset(size.width, 0f),
                         pathEffect = pathEffect,
-                        strokeWidth = 4.dp.toPx(),
+                        strokeWidth = 3.dp.toPx(),
                         cap = StrokeCap.Round
                     )
                 }
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp).padding(top = 4.dp),
+                    modifier = Modifier.size(20.dp).padding(top = 2.dp),
                     tint = lineColor
                 )
             }
@@ -351,32 +349,32 @@ fun TransitionToInDoorScreen(toBuilding: Int) {
                 Icon(
                     imageVector = Icons.Default.LocationCity,
                     contentDescription = null,
-                    modifier = Modifier.size(80.dp),
+                    modifier = Modifier.size(48.dp),
                     tint = buildingColor
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Building $toBuilding",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = buildingColor
                 )
             }
         }
 
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(20.dp))
         Text(
             text = "Enter Building $toBuilding",
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = buildingColor
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
 
         Text(
-            text = "Continue your route inside",
-            style = MaterialTheme.typography.bodyLarge,
+            text = "Continue inside",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )

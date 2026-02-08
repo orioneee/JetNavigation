@@ -188,7 +188,7 @@ buildConfig {
     println("API_KEY is set: ${apiKey.length}")
 
     buildConfigField("String", "MAPBOX_API_KEY", "\"$mapBoxApiKey\"")
-    buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$googleMapsApiKey\"")
+//    buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$googleMapsApiKey\"")
     buildConfigField("String", "API_KEY", "\"$apiKey\"")
     buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
 }
