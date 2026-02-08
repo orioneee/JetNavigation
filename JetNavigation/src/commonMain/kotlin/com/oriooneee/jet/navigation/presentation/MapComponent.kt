@@ -27,6 +27,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
 import com.oriooneee.jet.navigation.buildconfig.BuildConfig
+import com.oriooneee.jet.navigation.data.API_KEY
 import com.oriooneee.jet.navigation.domain.entities.Coordinates
 import com.oriooneee.jet.navigation.domain.entities.NavigationStep
 

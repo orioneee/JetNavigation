@@ -17,6 +17,8 @@ import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
+internal expect val BuildConfig.API_KEY: String
+
 class NavigationRemoteRepositoryImpl(
     private val client: HttpClient = HttpClient {
         install(ContentNegotiation) {

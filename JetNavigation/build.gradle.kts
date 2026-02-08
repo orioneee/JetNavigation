@@ -144,58 +144,51 @@ mavenPublishing {
     }
     if (project.hasProperty("signing.keyId")) signAllPublications()
 }
-
+fun String.getAsEnv(): String {
+    println("Attempting to retrieve value for $this from environment variables and local.properties")
+    return providers.provider {
+        System.getenv(this)
+            ?: rootProject.file("local.properties")
+                .takeIf { it.exists() }
+                ?.readLines()
+                ?.firstOrNull { it.startsWith("$this=") }
+                ?.substringAfter("=") ?: ""
+    }.get()
+}
 buildConfig {
     packageName("com.oriooneee.jet.navigation.buildconfig")
 
-    val mapBoxApiKey = providers.provider {
-        System.getenv("MAPBOX_API_KEY")
-            ?: rootProject.file("local.properties")
-                .takeIf { it.exists() }
-                ?.readLines()
-                ?.firstOrNull { it.startsWith("MAPBOX_API_KEY=") }
-                ?.substringAfter("=")
-            ?: ""
-    }.getOrElse("")
-    val googleMapsApiKey = providers.provider {
-        System.getenv("GOOGLE_MAPS_API_KEY")
-            ?: rootProject.file("local.properties")
-                .takeIf { it.exists() }
-                ?.readLines()
-                ?.firstOrNull { it.startsWith("GOOGLE_MAPS_API_KEY=") }
-                ?.substringAfter("=")
-            ?: ""
-    }.get()
-    val apiKey = providers.provider {
-        System.getenv("API_KEY")
-            ?: rootProject.file("local.properties")
-                .takeIf { it.exists() }
-                ?.readLines()
-                ?.firstOrNull { it.startsWith("API_KEY=") }
-                ?.substringAfter("=")
-            ?: ""
-    }.get()
-    val baseUrl = providers.provider {
-        System.getenv("BASE_URL")
-            ?: rootProject.file("local.properties")
-                .takeIf { it.exists() }
-                ?.readLines()
-                ?.firstOrNull { it.startsWith("BASE_URL=") }
-                ?.substringAfter("=")
-            ?: ""
-    }.get()
+    val mapBoxApiKey = "MAPBOX_API_KEY".getAsEnv()
+    val googleMapsApiKey = "GOOGLE_MAPS_API_KEY".getAsEnv()
+    val apiKeyAndroid = "API_KEY_ANDROID".getAsEnv()
+    val apiKeyIos = "API_KEY_IOS".getAsEnv()
+    val apiKeyDesktop = "API_KEY_DESKTOP".getAsEnv()
+    val apiKeyWeb = "API_KEY_WEB".getAsEnv()
+
+    val baseUrl = "BASE_URL".getAsEnv()
     require(googleMapsApiKey.isNotBlank()) { "GOOGLE_MAPS_API_KEY is not set in environment variables or local.properties" }
     require(mapBoxApiKey.isNotBlank()) { "MAPBOX_API_KEY is not set in environment variables or local.properties" }
-    require(apiKey.isNotBlank()) { "API_KEY is not set in environment variables or local.properties" }
     require(baseUrl.isNotBlank()) { "BASE_URL is not set in environment variables or local.properties" }
+    require(apiKeyAndroid.isNotBlank()) { "API_KEY_ANDROID is not set in environment variables or local.properties" }
+    require(apiKeyIos.isNotBlank()) { "API_KEY_IOS is not set in environment variables or local.properties" }
+    require(apiKeyDesktop.isNotBlank()) { "API_KEY_DESKTOP is not set in environment variables or local.properties" }
+    require(apiKeyWeb.isNotBlank()) { "API_KEY_WEB is not set in environment variables or local.properties" }
+
     println("GOOGLE_MAPS_API_KEY is set: ${googleMapsApiKey.length}")
     println("MAPBOX_API_KEY is set: ${mapBoxApiKey.length}")
-    println("API_KEY is set: ${apiKey.length}")
     println("BASE_URL is set: ${baseUrl.length}")
+    println("API_KEY_ANDROID is set: ${apiKeyAndroid.length}")
+    println("API_KEY_IOS is set: ${apiKeyIos.length}")
+    println("API_KEY_DESKTOP is set: ${apiKeyDesktop.length}")
+    println("API_KEY_WEB is set: ${apiKeyWeb.length}")
 
     buildConfigField("String", "MAPBOX_API_KEY", "\"$mapBoxApiKey\"")
 //    buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$googleMapsApiKey\"")
-    buildConfigField("String", "API_KEY", "\"$apiKey\"")
     buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
+
+buildConfigField("String", "API_KEY_ANDROID", "\"$apiKeyAndroid\"")
+    buildConfigField("String", "API_KEY_IOS", "\"$apiKeyIos\"")
+    buildConfigField("String", "API_KEY_DESKTOP", "\"$apiKeyDesktop\"")
+    buildConfigField("String", "API_KEY_WEB", "\"$apiKeyWeb\"")
 }
 

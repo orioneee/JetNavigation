@@ -36,8 +36,11 @@ jobs:
         env:
           MAPBOX_API_KEY: ${{ secrets.MAPBOX_API_KEY }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-          API_KEY: ${{ secrets.API_KEY }}
           BASE_URL: ${{ secrets.BASE_URL }}
+          API_KEY_ANDROID: ${{ secrets.API_KEY_ANDROID }}
+          API_KEY_IOS: ${{ secrets.API_KEY_IOS }}
+          API_KEY_DESKTOP: ${{ secrets.API_KEY_DESKTOP }}
+          API_KEY_WEB: ${{ secrets.API_KEY_WEB }}
         run: ./gradlew wasmJsBrowserDistribution
 
       - name: Upload artifact for GitHub Pages
