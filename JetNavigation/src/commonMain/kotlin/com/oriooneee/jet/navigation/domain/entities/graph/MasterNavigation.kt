@@ -2,9 +2,6 @@ package com.oriooneee.jet.navigation.domain.entities.graph
 
 
 import kotlinx.datetime.Instant
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -21,5 +18,6 @@ data class MasterNavigation(
     private val _createdAt: String
 ) {
     @Transient
-    val createdAt: Instant = LocalDateTime.parse(_createdAt).toInstant(TimeZone.of("Europe/Kyiv"))
+    val createdAt = Instant.parse(_createdAt)
 }
+
