@@ -13,10 +13,12 @@ import com.oriooneee.jet.navigation.engine.models.ResolvedNode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,7 +54,11 @@ class NavigationViewModel(
     val uiState = _uiState.asStateFlow()
 
     private val _masterNavigation = MutableStateFlow<MasterNavigation?>(null)
-
+    val navigationDataUpdatedAt = _masterNavigation.map { it?.createdAt }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        null
+    )
 
     private val navigationEngine = _masterNavigation.filterNotNull().map { navigation ->
         NavigationEngine(navigation, false)
@@ -252,6 +258,7 @@ class NavigationViewModel(
             } else it
         }
     }
+
     fun setStepIndex(index: Int) {
         _uiState.update {
             if (index in it.navigationSteps.indices) {

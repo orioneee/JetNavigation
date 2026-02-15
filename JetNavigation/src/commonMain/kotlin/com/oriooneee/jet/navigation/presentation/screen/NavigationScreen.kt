@@ -1,6 +1,7 @@
 package com.oriooneee.jet.navigation.presentation.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,6 +73,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.koin.compose.viewmodel.koinViewModel
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 const val KEY_SELECTED_START_NODE = "selected_start_node"
@@ -98,7 +103,7 @@ fun NavigationScreen(
             isHiddenMapCompoent = false
         }
     }
-    LaunchedEffect(Unit){
+    LaunchedEffect(Unit) {
         println("NavigationScreen LaunchedEffect: isWebOrDesktop = $isWebOrDesktop")
         shouldHideMap = isWebOrDesktop
         delay(600)
@@ -166,12 +171,47 @@ fun NavigationScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
-                            Text(
-                                text = "Powered by MapBox",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 10.sp
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val createdAt by viewModel.navigationDataUpdatedAt.collectAsState()
+                                AnimatedVisibility(
+                                    createdAt != null,
+                                ) {
+                                    val timeAgo = remember(createdAt) {
+                                        createdAt?.let {
+                                            val now = Clock.System.now()
+                                            val diff = now - it
+                                            when {
+                                                diff < 1.minutes -> "Just now"
+                                                diff < 1.hours -> "${diff.inWholeMinutes} min ago"
+                                                diff < 24.hours -> "${diff.inWholeHours} hour ago"
+                                                else -> "${diff.inWholeDays} day ago"
+                                            }
+                                        }
+                                    }
+                                   timeAgo?.let {
+                                       Text(
+                                           text = "Updated: $it",
+                                           style = MaterialTheme.typography.labelSmall,
+                                           color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                           lineHeight = 10.sp,
+                                       )
+                                   }
+                                }
+                                AnimatedVisibility(
+                                    currentStep is NavigationStep.OutDoorMaps,
+                                ) {
+                                    Text(
+                                        text = "Powered by MapBox",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 10.sp,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            }
                         }
                     },
                     modifier = Modifier.clip(

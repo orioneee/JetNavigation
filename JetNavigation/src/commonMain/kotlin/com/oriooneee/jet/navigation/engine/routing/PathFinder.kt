@@ -5,6 +5,8 @@ import com.oriooneee.jet.navigation.domain.entities.graph.NodeType
 import com.oriooneee.jet.navigation.domain.entities.graph.OutDoorNode
 import com.oriooneee.jet.navigation.engine.models.ResolvedNode
 import com.oriooneee.jet.navigation.engine.utils.MinHeap
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 class PathFinder(
     private val inDoorNodesMap: Map<String, InDoorNode>,
@@ -16,6 +18,7 @@ class PathFinder(
         private const val ENTRANCE_EXIT_PENALTY = 10.0
         private const val BUILDING_TRANSFER_PENALTY = 20.0
         private const val FLOOR_CHANGE_PENALTY = 8.0
+        private const val CLIMB_PENALTY_FACTOR = 2.0
     }
 
     fun findNearestNodeGlobal(
@@ -174,6 +177,17 @@ class PathFinder(
         }
         if (toNode is ResolvedNode.InDoor && toNode.node.type.contains(NodeType.TRANSFER_TO_ANOTHER_BUILDING)) {
             penalty += BUILDING_TRANSFER_PENALTY / 2
+        }
+
+        if (fromNode is ResolvedNode.InDoor && toNode is ResolvedNode.InDoor) {
+            val dz = abs(toNode.node.z - fromNode.node.z)
+            if (dz > 0.0) {
+                val dx = toNode.node.x - fromNode.node.x
+                val dy = toNode.node.y - fromNode.node.y
+                val horizontalDist = sqrt(dx * dx + dy * dy)
+                val slope = if (horizontalDist > 0.0) dz / horizontalDist else dz
+                penalty += slope * CLIMB_PENALTY_FACTOR
+            }
         }
 
         return penalty

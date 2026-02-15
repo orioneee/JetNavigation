@@ -19,12 +19,12 @@ data class InDoorNode(
     @SerialName("z")
     val z: Double,
     @SerialName("buildNum")
-    private val _buildNum: String,
+    private val _buildNum: Int,
     @SerialName("floorNum")
     val floorNum: Int
 ): NavNode{
     override val type: List<NodeType>
-        get() = _type ?: if(id.contains("TURN")) listOf(NodeType.TURN) else emptyList()
+        get() = _type ?: listOf()
     override val buildNum: Int
-        get() = _buildNum.toIntOrNull() ?: 0
+        get() = _buildNum
 }

@@ -47,13 +47,14 @@ class NavigationRemoteRepositoryImpl(
         }
 
         return runCatching {
-            client.get {
+            val res = client.get {
                 url {
                     takeFrom(BuildConfig.BASE_URL)
                     appendPathSegments("api", "navigation", "")
                     parameter("token", BuildConfig.API_KEY)
                 }
             }.body<MasterNavigation>()
+            res
         }.onSuccess {
             cachedNavigation = it
         }.onFailure {

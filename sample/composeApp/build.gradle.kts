@@ -42,7 +42,10 @@ kotlin {
         }
 
         jvmMain.dependencies {
-            implementation(compose.desktop.currentOs)
+            implementation(compose.desktop.currentOs) {
+                exclude(group = "org.jetbrains.skiko", module = "skiko-awt-runtime-macos-arm64")
+            }
+            implementation("org.jetbrains.skiko:skiko-awt-runtime-macos-arm64:0.9.37.4")
         }
 
     }
